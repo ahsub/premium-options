@@ -350,4 +350,4 @@ window.ScreenerEngine = {
   NASDAQ100,
   clearCache,
   loadCache,
-};
+}
