@@ -264,7 +264,42 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
       <div style="font-size:11px;color:var(--text2)">Score-Bonus: 2–5% → +0.3 · >5% → +0.6 · Kein Pflichtkriterium</div>
     </div>
 
-    <button class="btn primary" style="width:100%;margin-top:.65rem" onclick="runScreener()"><i class="ti ti-search"></i>Screener starten</button>
+    <!-- Universum & Quelle -->
+    <div class="div-section" style="margin-top:.4rem">
+      <div class="div-title">Aktien-Universum</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.4rem">
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="universe" value="all" checked> S&P500 + DJ30 + Nasdaq100 (~600)</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="universe" value="dj30"> Dow Jones 30</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="universe" value="ndx100"> Nasdaq 100</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="universe" value="curated"> 50er Kurzliste (kein API)</label>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:160px">
+          <label style="font-size:11px">Finnhub API-Key (für Live-Daten)</label>
+          <input type="password" id="fh-key" placeholder="Aus Einstellungen oder hier eingeben" style="font-size:12px;padding:5px 8px">
+        </div>
+        <div style="font-size:11px;color:var(--text2);align-self:flex-end;padding-bottom:2px">
+          <span id="fh-key-status"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div id="screener-progress" style="display:none;margin-top:.65rem">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:.3rem">
+        <span id="progress-msg" style="color:var(--text2)">Starte...</span>
+        <span id="progress-pct" style="font-weight:500;color:var(--green)">0%</span>
+      </div>
+      <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:.4rem">
+        <div id="progress-bar" style="height:100%;width:0%;background:var(--green);border-radius:3px;transition:width .3s"></div>
+      </div>
+      <div id="progress-stats" style="font-size:11px;color:var(--text2)"></div>
+    </div>
+
+    <div style="display:flex;gap:.5rem;margin-top:.65rem">
+      <button class="btn primary" style="flex:1" onclick="runScreener()"><i class="ti ti-search"></i>Screener starten</button>
+      <button class="btn sm" onclick="clearScreenerCache()" title="24h-Cache leeren"><i class="ti ti-refresh"></i>Cache</button>
+    </div>
   </div>
 </div>
 
@@ -628,7 +663,17 @@ python ibkr_options_proxy.py
 </div>
 <div>
   <div class="card card-sm">
-    <div class="card-title"><i class="ti ti-adjustments"></i>Standard-Parameter</div>
+    <div class="card-title"><i class="ti ti-key"></i>Finnhub API-Key (Screener)</div>
+    <div class="alert info"><i class="ti ti-info-circle"></i><div>Kostenloser Key auf <strong>finnhub.io</strong> — 60 Calls/Min. Für ~600 Aktien ca. 10–15 Min. Ergebnis wird 24h gecacht.</div></div>
+    <div class="frow"><label>Finnhub API-Token</label>
+      <div style="display:flex;gap:.4rem"><input type="password" id="fh-key-settings" placeholder="z.B. d1abc123..."><button class="btn sm" onclick="toggleFhKey()"><i class="ti ti-eye" id="fh-eye"></i></button></div>
+    </div>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn primary" onclick="saveFhKey()"><i class="ti ti-check"></i>Speichern</button>
+      <button class="btn" onclick="testFhKey()"><i class="ti ti-wifi"></i>Testen</button>
+    </div>
+    <div id="fh-key-result" style="margin-top:.5rem"></div>
+  </div>
     <div class="g2">
       <div class="frow"><label>Standard Delta</label><input type="number" id="pref-delta" value="0.48" step="0.01"></div>
       <div class="frow"><label>Ludwig-Laufzeit (Tage)</label><input type="number" id="pref-days" value="30"></div>
@@ -653,6 +698,7 @@ git push origin main
 </div><!-- /app -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="screener-engine.js"></script>
 <script>
 // ════════════════════════════════════════════
 // DATA
@@ -760,70 +806,121 @@ function ludwigScore(s){
 // ════════════════════════════════════════════
 // SCREENER
 // ════════════════════════════════════════════
-function runScreener(){
-  const pmin=+document.getElementById('s-pmin').value;
-  const pmax=+document.getElementById('s-pmax').value;
-  const pe=+document.getElementById('s-pe').value;
-  const ivmin=+document.getElementById('s-ivmin').value;
-  const ivmax=+document.getElementById('s-ivmax').value;
-  const payout=+document.getElementById('s-payout').value;
-  const needRev=document.getElementById('s-rev').checked;
-  const needFcf=document.getElementById('s-fcf').checked;
-  const needWeek=document.getElementById('s-week').checked;
-  const needBuy=document.getElementById('s-buyback').checked;
-  const chart=document.getElementById('s-chart').value;
-  const divYieldSel=[...document.querySelectorAll('input[name="div-yield"]')].find(r=>r.checked)?.value||'any';
-  const divGrowthSel=[...document.querySelectorAll('input[name="div-growth"]')].find(r=>r.checked)?.value||'any';
-  const aristocratMin=+document.getElementById('div-aristocrat').value||0;
+// Global screener results store
+let _screenerResults = [];
 
-  const results=STOCKS.filter(s=>{
-    if(s.price<pmin||s.price>pmax) return false;
-    if(s.pe>pe) return false;
-    if(s.iv<ivmin||s.iv>ivmax) return false;
-    if(s.payout>payout) return false;
-    if(needRev&&!s.revenue) return false;
-    if(needFcf&&!s.fcf) return false;
-    if(needWeek&&!s.weeklies) return false;
-    if(needBuy&&!s.buyback) return false;
-    if(chart==='rsi'&&(s.rsi>70||s.rsi<30)) return false;
-    if(chart==='macd'&&!s.macd) return false;
-    if(chart==='both'&&(!s.macd||s.rsi>70)) return false;
-    // Div yield filter (soft — only filter if specific range chosen)
-    const y=s.divYield||0;
-    if(divYieldSel==='lt2'&&y>2) return false;
-    if(divYieldSel==='2to4'&&(y<2||y>4)) return false;
-    if(divYieldSel==='gt4'&&y<=4) return false;
-    if(divYieldSel==='none'&&y>0) return false;
-    // Div growth filter
-    const g=s.divGrowth||0;
-    if(divGrowthSel==='lt2'&&g>=2) return false;
-    if(divGrowthSel==='2to5'&&(g<2||g>5)) return false;
-    if(divGrowthSel==='gt5'&&g<=5) return false;
-    // Aristocrat
-    if(aristocratMin>0&&(s.divStreak||0)<aristocratMin) return false;
+async function runScreener(){
+  // Collect params
+  const params = {
+    pmin:      +document.getElementById('s-pmin').value||15,
+    pmax:      +document.getElementById('s-pmax').value||80,
+    peMax:     +document.getElementById('s-pe').value||25,
+    ivMin:     +document.getElementById('s-ivmin').value||20,
+    ivMax:     +document.getElementById('s-ivmax').value||50,
+    payoutMax: +document.getElementById('s-payout').value||60,
+    needRevenue: document.getElementById('s-rev').checked,
+    needFcf:     document.getElementById('s-fcf').checked,
+    needWeeklies:document.getElementById('s-week').checked,
+    needBuyback: document.getElementById('s-buyback').checked,
+    divYield:  ([...document.querySelectorAll('input[name="div-yield"]')].find(r=>r.checked)?.value)||'any',
+    divGrowth: ([...document.querySelectorAll('input[name="div-growth"]')].find(r=>r.checked)?.value)||'any',
+    aristocratMin: +document.getElementById('div-aristocrat').value||0,
+    universe:  ([...document.querySelectorAll('input[name="universe"]')].find(r=>r.checked)?.value)||'all',
+  };
+
+  // Get Finnhub key (settings or inline field)
+  const fhKey = document.getElementById('fh-key').value.trim() ||
+                localStorage.getItem('finnhub_key') || '';
+
+  // Show progress
+  const prog = document.getElementById('screener-progress');
+  prog.style.display = 'block';
+  document.getElementById('screener-results').innerHTML =
+    '<div style="color:var(--text2);font-size:13px;text-align:center;padding:1.5rem 0"><span class="spinner"></span> Läuft...</div>';
+
+  const onProgress = ({pct, msg, phase}) => {
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('progress-pct').textContent = pct + '%';
+    document.getElementById('progress-msg').textContent = msg;
+    if(phase==='cache') document.getElementById('progress-stats').textContent = '⚡ Aus Cache — kein API-Call nötig';
+    else if(phase==='fallback') document.getElementById('progress-stats').textContent = '📋 Kuratierte Liste ohne API';
+    else if(phase===1) document.getElementById('progress-stats').textContent = `Phase 1: Schnell-Filter (Kurs $15–$80)`;
+    else if(phase===2) document.getElementById('progress-stats').textContent = `Phase 2: Fundamentaldaten via Finnhub`;
+  };
+
+  // Curated-only mode or no API
+  let universe = params.universe;
+  let allResults;
+
+  try {
+    if(universe==='curated' || !fhKey) {
+      // Use static list
+      const base = window.ScreenerEngine?.CURATED_50 || STOCKS;
+      allResults = base.map(s=>({...s, score: ludwigScore(s)}));
+      onProgress({pct:100, msg:`Kuratierte Liste: ${allResults.length} Aktien`, phase:'fallback'});
+    } else {
+      // Live Finnhub screening
+      allResults = await window.ScreenerEngine.runFullScreener(params, fhKey, onProgress, null);
+    }
+  } catch(e) {
+    // Fallback on error
+    const base = window.ScreenerEngine?.CURATED_50 || STOCKS;
+    allResults = base.map(s=>({...s, score: ludwigScore(s)}));
+    onProgress({pct:100, msg:`Fehler: ${e.message} — kuratierte Liste`, phase:'fallback'});
+    document.getElementById('progress-stats').textContent = '⚠ API-Fehler — Demo-Daten angezeigt';
+  }
+
+  // Apply remaining filters (chart, aristocrat) and render
+  const results = allResults.filter(s=>{
+    if(!s) return false;
+    const chart = document.getElementById('s-chart').value;
+    if(chart==='rsi'  && (s.rsi>70||s.rsi<30)) return false;
+    if(chart==='macd' && !s.macd) return false;
+    if(chart==='both' && (!s.macd||s.rsi>70)) return false;
+    if(params.aristocratMin>0 && (s.divStreak||0)<params.aristocratMin) return false;
     return true;
-  }).map(s=>({...s, score:ludwigScore(s)}))
-    .sort((a,b)=>b.score-a.score);
+  }).sort((a,b)=>(b.score||0)-(a.score||0));
 
-  const el=document.getElementById('screener-results');
+  _screenerResults = results;
+  renderScreenerResults(results);
+  prog.style.display = 'none';
+}
+
+function renderScreenerResults(results) {
+  const el = document.getElementById('screener-results');
   if(!results.length){
     el.innerHTML='<div style="color:var(--text2);text-align:center;padding:1.5rem;font-size:13px">Keine Kandidaten — Kriterien lockern</div>';
     return;
   }
-  el.innerHTML=results.map(s=>`
+  const universeLabel = ([...document.querySelectorAll('input[name="universe"]')].find(r=>r.checked)?.value)||'all';
+  const univNames = {all:'S&P500+DJ30+Nasdaq100',dj30:'DJ30',ndx100:'Nasdaq100',curated:'Kurzliste'};
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--text2);padding:.3rem .5rem;margin-bottom:.3rem;display:flex;justify-content:space-between">
+      <span><strong>${results.length}</strong> Kandidaten aus ${univNames[universeLabel]||universeLabel}</span>
+      <span style="color:var(--green)">Sortiert nach Ludwig-Score</span>
+    </div>
+  ` + results.map(s=>`
     <div class="sr" onclick="showDetail('${s.t}')">
       <div class="sr-ticker">${s.t}</div>
       <div style="flex:1">
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-          <div class="sr-bar"><div class="sr-fill" style="width:${s.score*10}%"></div></div>
+          <div class="sr-bar"><div class="sr-fill" style="width:${(s.score||0)*10}%"></div></div>
         </div>
         <div style="font-size:11px;color:var(--text2)">
-          $${s.price} · IV ${s.iv}% · Div ${(s.divYield||0).toFixed(1)}% · Growth ${(s.divGrowth||0).toFixed(1)}%/J · Streak ${s.divStreak||0}J
+          $${(s.price||0).toFixed(1)} · IV ${s.iv||'?'}% · Div ${(s.divYield||0).toFixed(1)}% · ↑${(s.divGrowth||0).toFixed(1)}%/J · ${s.divStreak||0}J Streak
         </div>
       </div>
-      <span class="badge ${s.score>=8?'b-green':s.score>=6.5?'b-amber':'b-gray'}">${s.score.toFixed(1)}</span>
+      <span class="badge ${(s.score||0)>=8?'b-green':(s.score||0)>=6.5?'b-amber':'b-gray'}">${(s.score||0).toFixed(1)}</span>
     </div>
   `).join('');
+}
+
+function clearScreenerCache() {
+  if(window.ScreenerEngine) window.ScreenerEngine.clearCache();
+  document.getElementById('progress-stats').textContent = 'Cache geleert — nächster Screener-Lauf holt frische Daten';
+  document.getElementById('progress-msg').textContent = 'Cache gelöscht';
+  document.getElementById('screener-progress').style.display='block';
+  setTimeout(()=>{ document.getElementById('screener-progress').style.display='none'; }, 2500);
 }
 
 function showDetail(ticker){
@@ -1429,6 +1526,37 @@ function loadDemoChain(sym){
 // ════════════════════════════════════════════
 // SETTINGS
 // ════════════════════════════════════════════
+function toggleFhKey(){
+  const i=document.getElementById('fh-key-settings');
+  const ic=document.getElementById('fh-eye');
+  i.type=i.type==='password'?'text':'password';
+  ic.className=i.type==='text'?'ti ti-eye-off':'ti ti-eye';
+}
+function saveFhKey(){
+  const k=document.getElementById('fh-key-settings').value.trim();
+  localStorage.setItem('finnhub_key',k);
+  // Sync to screener inline field
+  document.getElementById('fh-key').value=k;
+  document.getElementById('fh-key-result').innerHTML='<span class="badge b-green">Gespeichert ✓</span>';
+  document.getElementById('fh-key-status').innerHTML='<span class="badge b-green">Key vorhanden</span>';
+}
+async function testFhKey(){
+  const k=document.getElementById('fh-key-settings').value.trim()||localStorage.getItem('finnhub_key')||'';
+  const el=document.getElementById('fh-key-result');
+  if(!k){el.innerHTML='<div class="alert err"><i class="ti ti-x"></i><div>Kein Key eingegeben</div></div>';return;}
+  el.innerHTML='<span class="spinner"></span>';
+  try{
+    const r=await fetch(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${k}`);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>Key gültig! AAPL: $${(d.c||0).toFixed(2)}</div></div>`;
+    localStorage.setItem('finnhub_key',k);
+    document.getElementById('fh-key').value=k;
+    document.getElementById('fh-key-status').innerHTML='<span class="badge b-green">✓ Aktiv</span>';
+  }catch(ex){
+    el.innerHTML=`<div class="alert err"><i class="ti ti-x"></i><div>${ex.message}</div></div>`;
+  }
+}
 function toggleKey(){
   const i=document.getElementById('api-key');
   const ic=document.getElementById('eye-icon');
@@ -1484,7 +1612,13 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(k) document.getElementById('api-key').value=k;
   const e=localStorage.getItem('tradier_env');
   if(e) document.getElementById('api-env').value=e;
-  // Set today's date in journal
+  // Restore Finnhub key
+  const fhk=localStorage.getItem('finnhub_key');
+  if(fhk){
+    document.getElementById('fh-key').value=fhk;
+    document.getElementById('fh-key-settings').value=fhk;
+    document.getElementById('fh-key-status').innerHTML='<span class="badge b-green">✓ Key vorhanden</span>';
+  }
   const today=new Date().toISOString().slice(0,10);
   document.getElementById('j-open').value=today;
   const exp30=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
