@@ -180,12 +180,12 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
   <div class="card card-sm">
     <div class="card-title"><i class="ti ti-adjustments-horizontal"></i>Ludwig-Kriterien (Kap. 4)</div>
     <div class="g2">
-      <div class="frow"><label>Kurs min ($)</label><input type="number" id="s-pmin" value="15"></div>
-      <div class="frow"><label>Kurs max ($)</label><input type="number" id="s-pmax" value="80"></div>
-      <div class="frow"><label>KGV max</label><input type="number" id="s-pe" value="25"></div>
-      <div class="frow"><label>IV min (%)</label><input type="number" id="s-ivmin" value="20"></div>
-      <div class="frow"><label>IV max (%)</label><input type="number" id="s-ivmax" value="50"></div>
-      <div class="frow"><label>Payout-Ratio max (%)</label><input type="number" id="s-payout" value="60"></div>
+      <div class="frow"><label>Kurs min ($)</label><input type="number" id="s-pmin" value="15" oninput="refilterScreener()"></div>
+      <div class="frow"><label>Kurs max ($)</label><input type="number" id="s-pmax" value="80" oninput="refilterScreener()"></div>
+      <div class="frow"><label>KGV max</label><input type="number" id="s-pe" value="25" oninput="refilterScreener()"></div>
+      <div class="frow"><label>IV min (%)</label><input type="number" id="s-ivmin" value="20" oninput="refilterScreener()"></div>
+      <div class="frow"><label>IV max (%)</label><input type="number" id="s-ivmax" value="50" oninput="refilterScreener()"></div>
+      <div class="frow"><label>Payout-Ratio max (%)</label><input type="number" id="s-payout" value="60" oninput="refilterScreener()"></div>
     </div>
     <div class="frow">
       <label>Optionen-Tick max (% vom Kurs)</label>
@@ -194,14 +194,14 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
     </div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:.6rem">
       <label style="width:100%;margin-bottom:0;font-size:12px">Pflichtkriterien:</label>
-      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-rev" checked> Umsatz↑ (10J)</label>
-      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-fcf" checked> FCF positiv</label>
-      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-week" checked> Weeklies</label>
-      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-buyback"> Rückkäufe</label>
+      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-rev" checked onchange="refilterScreener()"> Umsatz↑ (10J)</label>
+      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-fcf" checked onchange="refilterScreener()"> FCF positiv</label>
+      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-week" checked onchange="refilterScreener()"> Weeklies</label>
+      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-buyback" onchange="refilterScreener()"> Rückkäufe</label>
     </div>
     <div class="frow">
       <label>Charttechnik</label>
-      <select id="s-chart">
+      <select id="s-chart" onchange="refilterScreener()">
         <option value="any">Beliebig</option>
         <option value="rsi" selected>RSI 30–70 steigend</option>
         <option value="macd">MACD Kaufsignal</option>
@@ -219,11 +219,11 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
     <div class="div-section">
       <div class="div-title">Dividendenrendite</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.4rem">
-        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="any" checked> Beliebig</label>
-        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="lt2"> ≤2%</label>
-        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="2to4"> 2–4%</label>
-        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="gt4"> >4%</label>
-        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="none"> Keine Div.</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="any" checked onchange="refilterScreener()"> Beliebig</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="lt2" onchange="refilterScreener()"> ≤2%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="2to4" onchange="refilterScreener()"> 2–4%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="gt4" onchange="refilterScreener()"> >4%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="none" onchange="refilterScreener()"> Keine Div.</label>
       </div>
       <div style="font-size:11px;color:var(--text2)">Score-Bonus: 2–4% → +0.5 Pkt · >4% → +0.3 (Vorsicht: hohe Div. ≠ besser)</div>
     </div>
@@ -234,15 +234,15 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
       <div class="g3" style="gap:.4rem;margin-bottom:.4rem">
         <div>
           <label style="font-size:11px">Payout-Ratio max (%)</label>
-          <input type="number" id="div-payout-max" value="60" style="font-size:12px;padding:5px 8px">
+          <input type="number" id="div-payout-max" value="60" style="font-size:12px;padding:5px 8px" oninput="refilterScreener()">
         </div>
         <div>
           <label style="font-size:11px">FCF-Coverage min (×)</label>
-          <input type="number" id="div-fcf-cov" value="1.2" step="0.1" style="font-size:12px;padding:5px 8px">
+          <input type="number" id="div-fcf-cov" value="1.2" step="0.1" style="font-size:12px;padding:5px 8px" oninput="refilterScreener()">
         </div>
         <div>
           <label style="font-size:11px">Aristocrat-Bonus</label>
-          <select id="div-aristocrat" style="font-size:12px;padding:5px 8px">
+          <select id="div-aristocrat" style="font-size:12px;padding:5px 8px" onchange="refilterScreener()">
             <option value="any">Beliebig</option>
             <option value="10">≥10 Jahre</option>
             <option value="25">Aristocrat (25+)</option>
@@ -257,10 +257,10 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
     <div class="div-section" style="margin-top:.4rem">
       <div class="div-title">Dividendenwachstum p.a. — Bonus-Faktor</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.3rem">
-        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="any" checked> Beliebig</label>
-        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="lt2"> &lt;2%</label>
-        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="2to5"> 2–5%</label>
-        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="gt5"> >5%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="any" checked onchange="refilterScreener()"> Beliebig</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="lt2" onchange="refilterScreener()"> &lt;2%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="2to5" onchange="refilterScreener()"> 2–5%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="gt5" onchange="refilterScreener()"> >5%</label>
       </div>
       <div style="font-size:11px;color:var(--text2)">Score-Bonus: 2–5% → +0.3 · >5% → +0.6 · Kein Pflichtkriterium</div>
     </div>
@@ -564,6 +564,16 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
       <div class="metric"><div class="metric-label">Win-Rate</div><div class="metric-value pos" id="jm-wr">–</div></div>
       <div class="metric"><div class="metric-label">Ø Rendite</div><div class="metric-value pos" id="jm-avg">–</div></div>
     </div>
+    <div class="divider"></div>
+    <div class="card-title"><i class="ti ti-cloud"></i>Cloud-Sync (iCloud / Dropbox / Google Drive)</div>
+    <div class="alert info" style="margin-bottom:.5rem"><i class="ti ti-info-circle"></i><div>JSON exportieren → in iCloud/Dropbox speichern → auf iPhone/iPad importieren. Funktioniert auf allen Geräten.</div></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn primary" onclick="exportJournal()"><i class="ti ti-download"></i>Journal exportieren (.json)</button>
+      <label class="btn" style="cursor:pointer"><i class="ti ti-upload"></i>Journal importieren
+        <input type="file" accept=".json" style="display:none" onchange="importJournal(event)">
+      </label>
+    </div>
+    <div id="journal-sync-msg" style="margin-top:.4rem;font-size:12px"></div>
   </div>
   <div class="card card-sm">
     <div class="card-title"><i class="ti ti-percentage"></i>Rendite-Hochrechnung (Kap. 3)</div>
@@ -577,7 +587,7 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
 </div>
 <div>
   <div class="card card-sm" style="min-height:300px">
-    <div class="card-title"><i class="ti ti-list"></i>Trade-Journal</div>
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span><i class="ti ti-list"></i> Trade-Journal</span><button class="btn xs" onclick="clearJournal()" style="color:var(--red)"><i class="ti ti-trash"></i> Alle löschen</button></div>
     <div id="journal-list"></div>
   </div>
 </div>
@@ -780,10 +790,7 @@ const STOCKS = [
    divYield:2.8,divGrowth:9.5,divStreak:14,fcfCoverage:4.2,aristocrat:false},
 ];
 
-let journalEntries = [
-  {ticker:'AAPL',strat:'CSP',strike:52,prem:120,open:'2026-05-05',exp:'2026-06-06',cont:1,status:'Gewinn',notes:'RSI steigend'},
-  {ticker:'MRK', strat:'CSP',strike:54,prem:130,open:'2026-05-12',exp:'2026-06-20',cont:1,status:'Offen', notes:'ATM, 30 Tage'},
-];
+let journalEntries = [];
 
 let chainData=[], selectedExpiry='', stockPrice=0, currentStrat='csp';
 let perfChartInst=null, ivChartInst=null;
@@ -856,12 +863,48 @@ function ludwigScore(s){
 // ════════════════════════════════════════════
 // SCREENER
 // ════════════════════════════════════════════
-// Global screener results store
-let _screenerResults = [];
+// Re-filter ohne neuen API-Call (nutzt gecachte/_screenerResults)
+function refilterScreener(){
+  if(!_screenerResults || _screenerResults.length === 0){
+    // Noch kein Screener-Lauf — prüfe ob Cache vorhanden
+    const cached = window.ScreenerEngine?.loadCache();
+    if(cached && cached.length > 0){
+      _screenerResults = cached;
+    } else {
+      return; // Kein Cache, kein Lauf → nichts zu filtern
+    }
+  }
+  const params = getScreenerParams();
+  const results = _screenerResults.filter(s => {
+    if(!s) return false;
+    if(s.price < (params.pmin||15) || s.price > (params.pmax||80)) return false;
+    if(params.peMax && s.pe > 0 && s.pe > params.peMax) return false;
+    if(s.iv > 0 && s.iv < (params.ivMin||15)) return false;
+    if(s.iv > 0 && s.iv > (params.ivMax||60)) return false;
+    if(params.payoutMax && s.payout > params.payoutMax) return false;
+    if(params.needFcf && !s.fcf) return false;
+    if(params.needRevenue && !s.revenue) return false;
+    const y = s.divYield||0;
+    if(params.divYield==='lt2'  && y>=2)          return false;
+    if(params.divYield==='2to4' && (y<2||y>4))    return false;
+    if(params.divYield==='gt4'  && y<=4)           return false;
+    if(params.divYield==='none' && y>0)            return false;
+    const g = s.divGrowth||0;
+    if(params.divGrowth==='lt2'  && g>=2)          return false;
+    if(params.divGrowth==='2to5' && (g<2||g>5))   return false;
+    if(params.divGrowth==='gt5'  && g<=5)          return false;
+    if((params.aristocratMin||0)>0 && (s.divStreak||0)<params.aristocratMin) return false;
+    const chart = document.getElementById('s-chart').value;
+    if(chart==='rsi'  && (s.rsi>70||s.rsi<30)) return false;
+    if(chart==='macd' && !s.macd)              return false;
+    if(chart==='both' && (!s.macd||s.rsi>70))  return false;
+    return true;
+  }).sort((a,b)=>(b.score||0)-(a.score||0));
+  renderScreenerResults(results);
+}
 
-async function runScreener(){
-  // Collect params
-  const params = {
+function getScreenerParams(){
+  return {
     pmin:      +document.getElementById('s-pmin').value||15,
     pmax:      +document.getElementById('s-pmax').value||80,
     peMax:     +document.getElementById('s-pe').value||25,
@@ -877,6 +920,10 @@ async function runScreener(){
     aristocratMin: +document.getElementById('div-aristocrat').value||0,
     universe:  ([...document.querySelectorAll('input[name="universe"]')].find(r=>r.checked)?.value)||'all',
   };
+}
+
+async function runScreener(){
+  const params = getScreenerParams();
 
   // Get Finnhub key (settings or inline field)
   const fhKey = document.getElementById('fh-key').value.trim() ||
@@ -920,8 +967,11 @@ async function runScreener(){
     document.getElementById('progress-stats').textContent = '⚠ API-Fehler — Demo-Daten angezeigt';
   }
 
+  // Store ALL results for re-filtering without new API call
+  _screenerResults = allResults || [];
+
   // Apply remaining filters (chart, aristocrat) and render
-  const results = allResults.filter(s=>{
+  const results = _screenerResults.filter(s=>{
     if(!s) return false;
     const chart = document.getElementById('s-chart').value;
     if(chart==='rsi'  && (s.rsi>70||s.rsi<30)) return false;
@@ -960,7 +1010,11 @@ function renderScreenerResults(results) {
           $${(s.price||0).toFixed(1)} · IV ${s.iv||'?'}% · Div ${(s.divYield||0).toFixed(1)}% · ↑${(s.divGrowth||0).toFixed(1)}%/J · ${s.divStreak||0}J Streak
         </div>
       </div>
-      <span class="badge ${(s.score||0)>=8?'b-green':(s.score||0)>=6.5?'b-amber':'b-gray'}">${(s.score||0).toFixed(1)}</span>
+      <div style="display:flex;gap:4px;align-items:center">
+        <span class="badge ${(s.score||0)>=8?'b-green':(s.score||0)>=6.5?'b-amber':'b-gray'}">${(s.score||0).toFixed(1)}</span>
+        <button class="btn xs b-teal" title="Optionskette öffnen" onclick="event.stopPropagation();openChainFor('${s.t}',${s.price||0})"><i class="ti ti-table"></i></button>
+        <button class="btn xs" title="Zum Rechner" onclick="event.stopPropagation();openCalcFor('${s.t}',${s.price||0},${s.iv||25})"><i class="ti ti-calculator"></i></button>
+      </div>
     </div>
   `).join('');
 }
@@ -1028,6 +1082,28 @@ function showDetail(ticker){
     </div>
   `).join('');
   window._sel=s;
+}
+
+// Direkter Sprung Screener → Optionskette
+function openChainFor(ticker, price){
+  document.getElementById('ch-sym').value = ticker;
+  document.getElementById('ch-src').value = localStorage.getItem('tradier_key') ? 'tradier' : 'demo';
+  showTab('chain');
+  setTimeout(()=>{ loadExpirations(); }, 100);
+}
+
+// Direkter Sprung Screener → Rechner
+function openCalcFor(ticker, price, iv){
+  showTab('calculator');
+  setTimeout(()=>{
+    document.getElementById('c-ticker').value = ticker;
+    document.getElementById('c-price').value  = price;
+    document.getElementById('c-strike').value = price;
+    document.getElementById('c-iv').value     = iv;
+    const ep = Math.round(price * iv/100 * Math.sqrt(30/365) * 100 / 2);
+    document.getElementById('c-prem').value   = ep;
+    calcPremium();
+  }, 100);
 }
 
 function sendToCalc(){
@@ -1251,6 +1327,82 @@ function calcAsymCC(){
 // ════════════════════════════════════════════
 // JOURNAL
 // ════════════════════════════════════════════
+// ── Journal Export/Import/Persistence ──────────────────────
+const JOURNAL_KEY = 'premium_options_journal';
+
+function saveJournalToStorage(){
+  try { localStorage.setItem(JOURNAL_KEY, JSON.stringify(journalEntries)); } catch(e){}
+}
+
+function loadJournalFromStorage(){
+  try {
+    const raw = localStorage.getItem(JOURNAL_KEY);
+    if(raw) journalEntries = JSON.parse(raw);
+  } catch(e){}
+}
+
+function exportJournal(){
+  const data = {
+    version: 1,
+    exportDate: new Date().toISOString().slice(0,10),
+    entries: journalEntries
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `premium-options-journal-${data.exportDate}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  document.getElementById('journal-sync-msg').innerHTML =
+    '<span class="badge b-green">✓ Exportiert — in iCloud/Dropbox/Google Drive speichern</span>';
+}
+
+function importJournal(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      const entries = data.entries || data; // support both formats
+      if(!Array.isArray(entries)) throw new Error('Ungültiges Format');
+      const merge = confirm(`${entries.length} Einträge gefunden.\nOK = zusammenführen (bestehende behalten)\nAbbrechen = ersetzen`);
+      if(merge){
+        // Deduplizieren nach ticker+open+strike
+        const existing = new Set(journalEntries.map(e=>`${e.ticker}|${e.open}|${e.strike}`));
+        const newEntries = entries.filter(e=>!existing.has(`${e.ticker}|${e.open}|${e.strike}`));
+        journalEntries = [...journalEntries, ...newEntries];
+        document.getElementById('journal-sync-msg').innerHTML =
+          `<span class="badge b-green">✓ ${newEntries.length} neue Einträge zusammengeführt</span>`;
+      } else {
+        journalEntries = entries;
+        document.getElementById('journal-sync-msg').innerHTML =
+          `<span class="badge b-green">✓ ${entries.length} Einträge importiert</span>`;
+      }
+      saveJournalToStorage();
+      renderJournal();
+    } catch(err) {
+      document.getElementById('journal-sync-msg').innerHTML =
+        `<span class="badge b-red">Fehler: ${err.message}</span>`;
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = ''; // reset so same file can be re-imported
+}
+
+function deleteJournalEntry(i){
+  journalEntries.splice(i,1);
+  saveJournalToStorage();
+  renderJournal();
+}
+function clearJournal(){
+  if(confirm('Alle Journal-Einträge löschen?')){
+    journalEntries=[];
+    saveJournalToStorage();
+    renderJournal();
+  }
+}
 function addJournal(){
   const e={
     ticker:document.getElementById('j-tick').value||'?',
@@ -1264,6 +1416,7 @@ function addJournal(){
     notes:document.getElementById('j-notes').value,
   };
   journalEntries.unshift(e);
+  saveJournalToStorage();
   renderJournal();
 }
 
@@ -1279,11 +1432,14 @@ function renderJournal(){
   document.getElementById('jm-avg').textContent=avgR.toFixed(1)+'%';
   const col={Offen:'b-blue',Gewinn:'b-green',Gerollt:'b-amber',Angedient:'b-amber',Verlust:'b-red'};
   const bord={Gewinn:'',Verlust:'je-red',Gerollt:'je-amber',Angedient:'je-amber'};
-  document.getElementById('journal-list').innerHTML=journalEntries.map(e=>`
+  document.getElementById('journal-list').innerHTML=journalEntries.map((e,i)=>`
     <div class="journal-entry ${bord[e.status]||''}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
         <div style="font-weight:600;font-size:13px">${e.ticker} — ${e.strat} @ $${e.strike} (${e.cont}×)</div>
-        <span class="badge ${col[e.status]||'b-gray'}">${e.status}</span>
+        <div style="display:flex;gap:.4rem;align-items:center">
+          <span class="badge ${col[e.status]||'b-gray'}">${e.status}</span>
+          <button class="btn xs" onclick="deleteJournalEntry(${i})" style="color:var(--red);padding:1px 5px"><i class="ti ti-x"></i></button>
+        </div>
       </div>
       <div style="font-size:11px;color:var(--text2)">Prämie: <strong>$${e.prem*e.cont}</strong> · ${e.open}→${e.exp}${e.notes?' · '+e.notes:''}</div>
     </div>
@@ -1781,7 +1937,8 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(k) document.getElementById('api-key').value=k;
   const e=localStorage.getItem('tradier_env');
   if(e) document.getElementById('api-env').value=e;
-  // Restore Finnhub key
+  // Load journal from localStorage
+  loadJournalFromStorage();
   const fhk=localStorage.getItem('finnhub_key');
   if(fhk){
     document.getElementById('fh-key').value=fhk;
