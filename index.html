@@ -346,7 +346,7 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
       <div class="frow" style="margin-bottom:0;flex:1;min-width:80px"><label>Ticker</label><input type="text" id="ch-sym" value="AAPL" oninput="this.value=this.value.toUpperCase()"></div>
       <div class="frow" style="margin-bottom:0"><label>Quelle</label>
         <select id="ch-src" onchange="onSrcChange()">
-          <option value="polygon">Polygon.io</option>
+          <option value="yahoo">Yahoo Finance</option>
           <option value="ibkr">IBKR Web API (lokal)</option>
           <option value="demo" selected>Demo</option>
         </select>
@@ -696,10 +696,10 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
 <div class="g2">
 <div>
   <div class="card card-sm">
-    <div class="card-title"><i class="ti ti-key"></i>Polygon.io API-Key (Optionskette)</div>
-    <div class="alert ok"><i class="ti ti-info-circle"></i><div>Account auf <strong>massive.com</strong> (ehem. Polygon.io) — nur E-Mail nötig, keine US-Steuer-ID. Verzögerte Optionsdaten + Greeks. Key bleibt nur lokal gespeichert.</div></div>
-    <div class="frow"><label>API-Key</label>
-      <div style="display:flex;gap:.4rem"><input type="password" id="api-key" placeholder="z.B. ukfoldTXM0..."><button class="btn sm" onclick="toggleKey()"><i class="ti ti-eye" id="eye-icon"></i></button></div>
+    <div class="card-title"><i class="ti ti-key"></i>Datenquellen (Yahoo Finance)</div>
+    <div class="alert ok"><i class="ti ti-info-circle"></i><div>Kein API-Key nötig! Optionsketten + Kurse via Yahoo Finance und deinem Cloudflare CORS-Proxy. Proxy-URL unten eintragen.</div></div>
+    <div class="frow"><label>CORS-Proxy URL</label>
+      <div style="display:flex;gap:.4rem"><input type="text" id="api-key" value="https://my-cors-proxy.ahildebrand.workers.dev" placeholder="https://my-cors-proxy.ahildebrand.workers.dev"><button class="btn sm" onclick="toggleKey()"><i class="ti ti-eye" id="eye-icon"></i></button></div>
     </div>
     <div style="display:flex;gap:.5rem">
       <button class="btn primary" onclick="saveKey()"><i class="ti ti-check"></i>Speichern</button>
@@ -1278,7 +1278,7 @@ function showDetail(ticker){
 // Direkter Sprung Screener → Optionskette
 function openChainFor(ticker, price){
   document.getElementById('ch-sym').value = ticker;
-  document.getElementById('ch-src').value = localStorage.getItem('tradier_key') ? 'polygon' : 'demo';
+  document.getElementById('ch-src').value = 'yahoo';
   showTab('chain');
   setTimeout(()=>{ loadExpirations(); }, 100);
 }
@@ -1701,6 +1701,24 @@ function renderIVChart(){
   });
 }
 
+
+// ════════════════════════════════════════════
+// BLACK-SCHOLES (für Delta-Berechnung wenn Yahoo keine Greeks liefert)
+// ════════════════════════════════════════════
+function bsNorm(x){
+  const a=[0.319381530,-0.356563782,1.781477937,-1.821255978,1.330274429];
+  const k=1/(1+0.2316419*Math.abs(x));
+  let poly=0; let kn=k;
+  a.forEach(ai=>{poly+=ai*kn;kn*=k;});
+  const n=Math.exp(-x*x/2)/Math.sqrt(2*Math.PI)*poly;
+  return x>=0?1-n:n;
+}
+function bsDelta(S,K,T,r,sigma,type){
+  if(T<=0||sigma<=0) return type==='call'?1:0;
+  const d1=(Math.log(S/K)+(r+sigma*sigma/2)*T)/(sigma*Math.sqrt(T));
+  return type==='call'?bsNorm(d1):bsNorm(d1)-1;
+}
+
 // ════════════════════════════════════════════
 // LIVE CHAIN
 // ════════════════════════════════════════════
@@ -1718,12 +1736,15 @@ function onSrcChange(){
   if(src==='demo') loadDemoChain(document.getElementById('ch-sym').value||'AAPL');
 }
 
-function getPolygonKey(){
-  return localStorage.getItem('tradier_key')||'';
+function getProxy(){
+  return localStorage.getItem('tradier_key')||'https://my-cors-proxy.ahildebrand.workers.dev';
 }
-// Legacy shims (unused but kept for safety)
+function proxyUrl(url){
+  return getProxy()+'/?url='+encodeURIComponent(url);
+}
+// Legacy shims
 function getHeaders(){ return {'Accept':'application/json'}; }
-function getBase(){ return 'https://api.massive.com'; }
+function getBase(){ return ''; }
 
 async function loadExpirations(){
   const sym=document.getElementById('ch-sym').value.trim().toUpperCase();
@@ -1733,14 +1754,14 @@ async function loadExpirations(){
   document.getElementById('expiry-chips').innerHTML='<span class="spinner"></span>';
   try{
     let exps=[];
-    if(src==='polygon'){
-      const key=getPolygonKey();
-      if(!key) throw new Error('Kein Polygon-Key — bitte in Einstellungen eintragen');
-      const r=await fetch(`https://api.massive.com/v3/reference/options/contracts?underlying_ticker=${sym}&expired=false&limit=50&apiKey=${key}`);
+    if(src==='yahoo'){
+      const r=await fetch(proxyUrl(`https://query1.finance.yahoo.com/v7/finance/options/${sym}`),
+        {headers:{'User-Agent':'Mozilla/5.0'}});
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
-      const dates=[...new Set((d.results||[]).map(c=>c.expiration_date))].sort().slice(0,12);
-      exps=dates;
+      exps=(d.optionChain?.result?.[0]?.expirationDates||[])
+        .map(ts=>new Date(ts*1000).toISOString().slice(0,10))
+        .slice(0,12);
     } else {
       const pu=document.getElementById('proxy-url')?.value||'http://localhost:5001';
       const r=await fetch(`${pu}/expirations?symbol=${sym}`);
@@ -1777,36 +1798,35 @@ async function loadChain(sym,exp){
   document.getElementById('chain-table').innerHTML='<span class="spinner"></span> Lade Optionskette...';
   try{
     let opts=[];
-    if(src==='polygon'){
-      const key=getPolygonKey();
-      if(!key) throw new Error('Kein Polygon-Key — bitte in Einstellungen eintragen');
-      // Get stock quote
-      const qr=await fetch(`https://api.massive.com/v2/last/trade/${sym}?apiKey=${key}`);
-      const qd=await qr.json();
-      if(qd.results?.p){ stockPrice=qd.results.p; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
-      // Get options chain for expiry
-      const type=document.getElementById('ch-type').value;
-      const typeFilter=type==='put'?'put':type==='call'?'call':'';
-      let url=`https://api.massive.com/v3/snapshot/options/${sym}?expiration_date=${exp}&limit=100&apiKey=${key}`;
-      if(typeFilter) url+=`&contract_type=${typeFilter}`;
-      const r=await fetch(url);
+    if(src==='yahoo'){
+      // Convert date string back to unix timestamp
+      const ts = Math.floor(new Date(exp+'T20:00:00Z').getTime()/1000);
+      const r=await fetch(proxyUrl(`https://query1.finance.yahoo.com/v7/finance/options/${sym}?date=${ts}`),
+        {headers:{'User-Agent':'Mozilla/5.0'}});
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
-      // Normalize Polygon format to our internal format
-      opts=(d.results||[]).map(o=>({
-        option_type: o.details?.contract_type||'put',
-        strike: o.details?.strike_price||0,
-        bid: o.day?.open||o.last_quote?.bid||0,
-        ask: o.last_quote?.ask||0,
-        last: o.last_trade?.price||o.day?.close||0,
-        open_interest: o.open_interest||0,
+      const res=d.optionChain?.result?.[0];
+      if(!res) throw new Error('Keine Daten von Yahoo Finance');
+      // Stock price
+      const q=res.quote;
+      if(q?.regularMarketPrice){ stockPrice=q.regularMarketPrice; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
+      // Normalize Yahoo options format → internal format
+      const normalize=(arr,type)=>(arr||[]).map(o=>({
+        option_type: type,
+        strike: o.strike,
+        bid: o.bid||0,
+        ask: o.ask||0,
+        last: o.lastPrice||0,
+        open_interest: o.openInterest||0,
         greeks:{
-          delta: o.greeks?.delta||0,
-          mid_iv: o.implied_volatility||0,
-          theta: o.greeks?.theta||0,
-          gamma: o.greeks?.gamma||0,
+          delta: type==='put'?-(o.delta||bsDelta(stockPrice,o.strike,o.daysToExpiration/365,0.045,o.impliedVolatility||0.3,'put'))
+                             :(o.delta||bsDelta(stockPrice,o.strike,o.daysToExpiration/365,0.045,o.impliedVolatility||0.3,'call')),
+          mid_iv: o.impliedVolatility||0,
+          theta: o.theta||0,
+          gamma: o.gamma||0,
         }
       }));
+      opts=[...normalize(res.options?.[0]?.puts,'put'),...normalize(res.options?.[0]?.calls,'call')];
     } else {
       const pu=document.getElementById('proxy-url')?.value||'http://localhost:5001';
       const ot=document.getElementById('ch-type').value==='put'?'P':'C';
@@ -2005,23 +2025,22 @@ function toggleKey(){
 }
 function saveKey(){
   localStorage.setItem('tradier_key',document.getElementById('api-key').value);
-  localStorage.setItem('tradier_env',document.getElementById('api-env').value);
-  document.getElementById('key-result').innerHTML='<span class="badge b-green">Gespeichert ✓</span>';
+  document.getElementById('key-result').innerHTML='<span class="badge b-green">Proxy-URL gespeichert ✓</span>';
 }
 async function testKey(){
-  const k=document.getElementById('api-key').value.trim();
+  const proxy=document.getElementById('api-key').value.trim()||'https://my-cors-proxy.ahildebrand.workers.dev';
   const el=document.getElementById('key-result');
-  if(!k){el.innerHTML='<div class="alert err"><i class="ti ti-x"></i><div>Kein Key eingegeben</div></div>';return;}
   el.innerHTML='<span class="spinner"></span>';
   try{
-    const r=await fetch(`https://api.massive.com/v2/last/trade/AAPL?apiKey=${k}`);
-    if(!r.ok) throw new Error('HTTP '+r.status+' — Key ungültig?');
+    const url=proxy+'/?url='+encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=1d&interval=1d');
+    const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0'},signal:AbortSignal.timeout(6000)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
     const d=await r.json();
-    const price=d.results?.p||'?';
-    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>Polygon Key gültig! AAPL letzter Kurs: $${price}</div></div>`;
-    localStorage.setItem('tradier_key',k);
+    const price=d.chart?.result?.[0]?.meta?.regularMarketPrice||'?';
+    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>Proxy + Yahoo Finance OK! AAPL: $${typeof price==='number'?price.toFixed(2):price}</div></div>`;
+    localStorage.setItem('tradier_key',proxy);
   } catch(ex){
-    el.innerHTML=`<div class="alert err"><i class="ti ti-x"></i><div>${ex.message}</div></div>`;
+    el.innerHTML=`<div class="alert err"><i class="ti ti-x"></i><div>Fehler: ${ex.message}<br><small>Proxy-URL korrekt? Cloudflare Worker aktiv?</small></div></div>`;
   }
 }
 async function testProxy(){
@@ -2174,7 +2193,8 @@ window.addEventListener('DOMContentLoaded',()=>{
   // Restore saved key
   const k=localStorage.getItem('tradier_key');
   if(k) document.getElementById('api-key').value=k;
-  // api-env removed (Polygon has no env toggle)
+  const proxyVal=localStorage.getItem('tradier_key');
+  if(proxyVal&&document.getElementById('api-key')) document.getElementById('api-key').value=proxyVal;
   // Load journal from localStorage
   loadJournalFromStorage();
   const fhk=localStorage.getItem('finnhub_key');
