@@ -346,8 +346,8 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
       <div class="frow" style="margin-bottom:0;flex:1;min-width:80px"><label>Ticker</label><input type="text" id="ch-sym" value="AAPL" oninput="this.value=this.value.toUpperCase()"></div>
       <div class="frow" style="margin-bottom:0"><label>Quelle</label>
         <select id="ch-src" onchange="onSrcChange()">
-          <option value="tradier">Tradier API</option>
-          <option value="ibkr">IBKR-Proxy</option>
+          <option value="polygon">Polygon.io</option>
+          <option value="ibkr">IBKR Web API (lokal)</option>
           <option value="demo" selected>Demo</option>
         </select>
       </div>
@@ -696,13 +696,10 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
 <div class="g2">
 <div>
   <div class="card card-sm">
-    <div class="card-title"><i class="ti ti-key"></i>Tradier API-Key</div>
-    <div class="alert info"><i class="ti ti-info-circle"></i><div>Sandbox-Account kostenlos auf <strong>sandbox.tradier.com</strong> — verzögerte echte Daten + Greeks (ORATS). Key wird nur lokal gespeichert.</div></div>
-    <div class="frow"><label>API-Token</label>
-      <div style="display:flex;gap:.4rem"><input type="password" id="api-key" placeholder="Bearer Token"><button class="btn sm" onclick="toggleKey()"><i class="ti ti-eye" id="eye-icon"></i></button></div>
-    </div>
-    <div class="frow"><label>Umgebung</label>
-      <select id="api-env"><option value="sandbox">Sandbox (Paper)</option><option value="production">Production (Live)</option></select>
+    <div class="card-title"><i class="ti ti-key"></i>Polygon.io API-Key (Optionskette)</div>
+    <div class="alert ok"><i class="ti ti-info-circle"></i><div>Kostenloser Account auf <strong>polygon.io</strong> — nur E-Mail nötig, keine US-Steuer-ID. Verzögerte Optionsdaten + Greeks. Key bleibt nur lokal gespeichert.</div></div>
+    <div class="frow"><label>API-Key</label>
+      <div style="display:flex;gap:.4rem"><input type="password" id="api-key" placeholder="z.B. ukfoldTXM0..."><button class="btn sm" onclick="toggleKey()"><i class="ti ti-eye" id="eye-icon"></i></button></div>
     </div>
     <div style="display:flex;gap:.5rem">
       <button class="btn primary" onclick="saveKey()"><i class="ti ti-check"></i>Speichern</button>
@@ -712,13 +709,30 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
   </div>
 
   <div class="card card-sm">
-    <div class="card-title"><i class="ti ti-terminal"></i>IBKR-Proxy Setup</div>
-    <div class="frow"><label>Proxy-URL</label><input type="text" id="proxy-url" value="http://localhost:5001"></div>
+    <div class="card-title"><i class="ti ti-terminal"></i>IBKR-Integration</div>
+    <div class="alert warn"><i class="ti ti-alert-triangle"></i><div><strong>Browser-Sicherheitsregel:</strong> GitHub Pages (HTTPS) blockiert HTTP-localhost-Verbindungen. Zwei Lösungen:</div></div>
+
+    <div style="font-size:12px;font-weight:600;margin:.4rem 0 .3rem">Option A — IBKR Web API (kein Proxy nötig)</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:.4rem">IBKR HTTPS Web API direkt aus TWS. TWS → Konfiguration → API → Web API aktivieren.</div>
+    <div class="frow"><label>IBKR Web API URL</label><input type="text" id="ibkr-api-url" value="https://localhost:5000/v1/api"></div>
+    <div class="frow"><label>OAuth Token (TWS → API → Web API)</label><input type="password" id="ibkr-token" placeholder="Token hier einfügen"></div>
+    <div style="display:flex;gap:.5rem;margin-bottom:.65rem">
+      <button class="btn primary" onclick="saveIBKRSettings()"><i class="ti ti-check"></i>Speichern</button>
+      <button class="btn" onclick="testIBKRWebAPI()"><i class="ti ti-wifi"></i>Testen</button>
+    </div>
+    <div id="ibkr-test-result"></div>
+
+    <div class="divider"></div>
+
+    <div style="font-size:12px;font-weight:600;margin-bottom:.3rem">Option B — Proxy mit HTTPS (einmalige Browser-Erlaubnis)</div>
+    <div class="proxy-code">pip install flask flask-cors ib_insync pyopenssl
+python ibkr_options_proxy.py  # startet auf https://localhost:5001
+
+# Einmalig: https://localhost:5001 im Browser öffnen
+# → "Erweitert" → "Weiter zu localhost" → fertig</div>
+    <div class="frow" style="margin-top:.5rem"><label>Proxy-URL</label><input type="text" id="proxy-url" value="https://localhost:5001"></div>
     <button class="btn" onclick="testProxy()"><i class="ti ti-wifi"></i>Verbindung testen</button>
     <div id="proxy-result" style="margin-top:.5rem"></div>
-    <div class="proxy-code" style="margin-top:.6rem">pip install flask flask-cors ib_insync
-python ibkr_options_proxy.py
-# → http://localhost:5001</div>
   </div>
 </div>
 <div>
@@ -758,7 +772,184 @@ git push origin main
 </div><!-- /app -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="screener-engine.js"></script>
+<script>
+// ════════════════════════════════════════════
+// SCREENER ENGINE (inline — kein separates .js nötig)
+// ════════════════════════════════════════════
+window.ScreenerEngine = (function(){
+
+const CURATED_50 = [
+  {t:'AAPL',price:212,pe:32,iv:28,payout:15,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:52,macd:true,support:205,resist:220,divYield:0.5,divGrowth:5,divStreak:12,fcfCoverage:8.5},
+  {t:'MSFT',price:445,pe:38,iv:22,payout:28,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:55,macd:true,support:430,resist:460,divYield:0.7,divGrowth:10,divStreak:22,fcfCoverage:7},
+  {t:'JNJ',price:155,pe:14,iv:18,payout:55,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:44,macd:false,support:150,resist:162,divYield:3.1,divGrowth:5.8,divStreak:62,fcfCoverage:2.1},
+  {t:'KO',price:63,pe:23,iv:19,payout:68,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:60,macd:false,support:60,resist:67,divYield:3.2,divGrowth:4.8,divStreak:62,fcfCoverage:1.8},
+  {t:'PG',price:168,pe:24,iv:16,payout:58,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:55,macd:true,support:163,resist:175,divYield:2.4,divGrowth:5.1,divStreak:68,fcfCoverage:2.4},
+  {t:'MRK',price:123,pe:14,iv:28,payout:40,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:50,macd:true,support:118,resist:130,divYield:2.7,divGrowth:6.5,divStreak:14,fcfCoverage:3.8},
+  {t:'PFE',price:27,pe:11,iv:29,payout:50,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:46,macd:true,support:25,resist:30,divYield:6.1,divGrowth:2.5,divStreak:14,fcfCoverage:1.6},
+  {t:'WMT',price:76,pe:30,iv:17,payout:38,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:58,macd:true,support:72,resist:80,divYield:1.3,divGrowth:2,divStreak:52,fcfCoverage:3.5},
+  {t:'ABT',price:116,pe:21,iv:21,payout:44,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:51,macd:true,support:112,resist:122,divYield:1.9,divGrowth:7.8,divStreak:52,fcfCoverage:3.1},
+  {t:'MMM',price:135,pe:16,iv:32,payout:45,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:38,macd:true,support:128,resist:142,divYield:2.1,divGrowth:0,divStreak:66,fcfCoverage:1.3},
+  {t:'VZ',price:40,pe:9,iv:22,payout:56,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:42,macd:false,support:37,resist:44,divYield:6.4,divGrowth:2,divStreak:18,fcfCoverage:1.1},
+  {t:'BLK',price:900,pe:20,iv:23,payout:48,fcf:true,revenue:true,weeklies:false,buyback:true,rsi:53,macd:true,support:870,resist:940,divYield:2.8,divGrowth:9.5,divStreak:14,fcfCoverage:4.2},
+  {t:'T',price:18,pe:8,iv:25,payout:60,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:45,macd:true,support:17,resist:20,divYield:6.6,divGrowth:1,divStreak:1,fcfCoverage:1.2},
+  {t:'XOM',price:118,pe:14,iv:20,payout:38,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:55,macd:true,support:112,resist:124,divYield:3.4,divGrowth:4,divStreak:41,fcfCoverage:2.8},
+  {t:'CVX',price:152,pe:16,iv:21,payout:42,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:50,macd:true,support:146,resist:160,divYield:4.1,divGrowth:3,divStreak:36,fcfCoverage:2.3},
+  {t:'BAC',price:42,pe:13,iv:26,payout:30,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:56,macd:true,support:39,resist:46,divYield:2.3,divGrowth:8,divStreak:3,fcfCoverage:0},
+  {t:'JPM',price:215,pe:12,iv:22,payout:28,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:60,macd:true,support:205,resist:225,divYield:2.2,divGrowth:7,divStreak:3,fcfCoverage:0},
+  {t:'HD',price:375,pe:22,iv:19,payout:55,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:53,macd:true,support:360,resist:390,divYield:2.4,divGrowth:6,divStreak:14,fcfCoverage:3},
+  {t:'LOW',price:245,pe:20,iv:20,payout:35,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:51,macd:true,support:236,resist:256,divYield:2.0,divGrowth:7,divStreak:40,fcfCoverage:3.5},
+  {t:'COST',price:880,pe:48,iv:16,payout:28,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:60,macd:true,support:850,resist:920,divYield:0.6,divGrowth:10,divStreak:20,fcfCoverage:5},
+  {t:'MCD',price:295,pe:22,iv:17,payout:60,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:53,macd:true,support:285,resist:308,divYield:2.3,divGrowth:5,divStreak:47,fcfCoverage:2.2},
+  {t:'DIS',price:112,pe:25,iv:27,payout:0,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:45,macd:false,support:106,resist:120,divYield:0,divGrowth:0,divStreak:0,fcfCoverage:2},
+  {t:'INTC',price:30,pe:18,iv:35,payout:65,fcf:false,revenue:false,weeklies:true,buyback:false,rsi:38,macd:false,support:27,resist:35,divYield:2.2,divGrowth:0,divStreak:8,fcfCoverage:0.8},
+  {t:'IBM',price:175,pe:18,iv:20,payout:65,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:52,macd:true,support:168,resist:184,divYield:3.4,divGrowth:1,divStreak:28,fcfCoverage:1.6},
+  {t:'CAT',price:340,pe:16,iv:22,payout:32,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:55,macd:true,support:325,resist:358,divYield:1.6,divGrowth:7,divStreak:30,fcfCoverage:2.8},
+  {t:'DE',price:420,pe:14,iv:24,payout:18,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:50,macd:true,support:400,resist:444,divYield:1.5,divGrowth:8,divStreak:4,fcfCoverage:3.2},
+  {t:'GE',price:165,pe:28,iv:26,payout:10,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:58,macd:true,support:156,resist:175,divYield:0.7,divGrowth:10,divStreak:1,fcfCoverage:4},
+  {t:'HON',price:210,pe:22,iv:18,payout:40,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:49,macd:true,support:202,resist:220,divYield:2.1,divGrowth:5,divStreak:14,fcfCoverage:2.5},
+  {t:'RTX',price:115,pe:20,iv:19,payout:38,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:54,macd:true,support:110,resist:122,divYield:2.2,divGrowth:4,divStreak:30,fcfCoverage:2.2},
+  {t:'LMT',price:480,pe:16,iv:17,payout:45,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:52,macd:true,support:460,resist:504,divYield:2.7,divGrowth:5,divStreak:20,fcfCoverage:2.6},
+  {t:'NEE',price:72,pe:18,iv:20,payout:60,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:50,macd:true,support:68,resist:77,divYield:3.2,divGrowth:10,divStreak:28,fcfCoverage:1.5},
+  {t:'SO',price:84,pe:20,iv:15,payout:78,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:52,macd:false,support:80,resist:88,divYield:3.4,divGrowth:3,divStreak:23,fcfCoverage:1.2},
+  {t:'DUK',price:105,pe:19,iv:14,payout:72,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:50,macd:false,support:100,resist:110,divYield:3.9,divGrowth:3,divStreak:17,fcfCoverage:1.1},
+  {t:'AMGN',price:288,pe:16,iv:24,payout:45,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:46,macd:true,support:278,resist:300,divYield:3.2,divGrowth:9,divStreak:12,fcfCoverage:2.8},
+  {t:'ABBV',price:172,pe:16,iv:22,payout:55,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:52,macd:true,support:165,resist:180,divYield:3.6,divGrowth:8,divStreak:12,fcfCoverage:2.4},
+  {t:'BMY',price:55,pe:14,iv:26,payout:52,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:44,macd:true,support:52,resist:59,divYield:4.6,divGrowth:5,divStreak:3,fcfCoverage:2.1},
+  {t:'LLY',price:780,pe:50,iv:30,payout:15,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:62,macd:true,support:750,resist:820,divYield:0.7,divGrowth:15,divStreak:8,fcfCoverage:6},
+  {t:'UNH',price:520,pe:18,iv:20,payout:28,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:48,macd:false,support:500,resist:548,divYield:1.5,divGrowth:12,divStreak:14,fcfCoverage:3.5},
+  {t:'CVS',price:58,pe:10,iv:24,payout:30,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:42,macd:false,support:55,resist:63,divYield:4.1,divGrowth:0,divStreak:8,fcfCoverage:1.8},
+  {t:'TGT',price:155,pe:16,iv:26,payout:48,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:44,macd:false,support:148,resist:166,divYield:3.3,divGrowth:4,divStreak:52,fcfCoverage:2.3},
+  {t:'NKE',price:75,pe:24,iv:28,payout:38,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:42,macd:false,support:70,resist:82,divYield:2.1,divGrowth:11,divStreak:22,fcfCoverage:3.2},
+  {t:'SBUX',price:92,pe:24,iv:28,payout:62,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:48,macd:false,support:87,resist:98,divYield:2.8,divGrowth:8,divStreak:14,fcfCoverage:2},
+  {t:'PM',price:118,pe:18,iv:18,payout:88,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:56,macd:true,support:112,resist:126,divYield:5.2,divGrowth:3,divStreak:15,fcfCoverage:1.4},
+  {t:'MO',price:44,pe:9,iv:20,payout:80,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:50,macd:false,support:42,resist:47,divYield:8.6,divGrowth:4,divStreak:54,fcfCoverage:1.2},
+  {t:'O',price:55,pe:38,iv:16,payout:75,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:48,macd:false,support:52,resist:59,divYield:5.8,divGrowth:3,divStreak:30,fcfCoverage:1.3},
+  {t:'AMT',price:185,pe:40,iv:18,payout:80,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:50,macd:true,support:178,resist:195,divYield:3.1,divGrowth:10,divStreak:13,fcfCoverage:1.4},
+  {t:'CCI',price:98,pe:35,iv:20,payout:85,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:44,macd:false,support:93,resist:105,divYield:6.2,divGrowth:7,divStreak:9,fcfCoverage:1.2},
+  {t:'D',price:52,pe:18,iv:16,payout:70,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:46,macd:false,support:49,resist:56,divYield:5.1,divGrowth:2,divStreak:20,fcfCoverage:1.1},
+  {t:'OKE',price:82,pe:16,iv:22,payout:65,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:54,macd:true,support:78,resist:88,divYield:4.8,divGrowth:4,divStreak:26,fcfCoverage:1.6},
+  {t:'WPC',price:58,pe:20,iv:18,payout:78,fcf:true,revenue:true,weeklies:false,buyback:false,rsi:50,macd:false,support:55,resist:62,divYield:6.0,divGrowth:3,divStreak:26,fcfCoverage:1.3},
+];
+
+const CACHE_KEY = 'screener_cache_v2';
+const CACHE_TTL = 24*60*60*1000;
+
+function loadCache(){
+  try{
+    const raw = localStorage.getItem(CACHE_KEY);
+    if(!raw) return null;
+    const {ts,data} = JSON.parse(raw);
+    if(Date.now()-ts > CACHE_TTL) return null;
+    return data;
+  }catch(e){ return null; }
+}
+
+function saveCache(data){
+  try{ localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(),data})); }catch(e){}
+}
+
+function clearCache(){
+  localStorage.removeItem(CACHE_KEY);
+}
+
+async function fetchFinnhub(url, key){
+  const sep = url.includes('?') ? '&' : '?';
+  const r = await fetch(`${url}${sep}token=${key}`, {signal:AbortSignal.timeout(8000)});
+  if(!r.ok) throw new Error('FH HTTP '+r.status);
+  return r.json();
+}
+
+async function runFullScreener(params, fhKey, onProgress, _unused){
+  // Check cache first
+  const cached = loadCache();
+  if(cached && cached.length > 0){
+    onProgress({pct:100, msg:`Cache: ${cached.length} Aktien geladen`, phase:'cache'});
+    return cached;
+  }
+
+  // Use curated list as base — enrich with live Finnhub data
+  const base = [...CURATED_50];
+  const results = [];
+  const total = base.length;
+
+  for(let i=0; i<total; i++){
+    const s = {...base[i]};
+    onProgress({pct:Math.round(i/total*100), msg:`${s.t} (${i+1}/${total})`, phase:2});
+    try{
+      const [q, f] = await Promise.all([
+        fetchFinnhub(`https://finnhub.io/api/v1/quote?symbol=${s.t}`, fhKey),
+        fetchFinnhub(`https://finnhub.io/api/v1/stock/metric?symbol=${s.t}&metric=all`, fhKey),
+      ]);
+      if(q.c > 0) s.price = q.c;
+      const m = f.metric || {};
+      if(m['peNormalizedAnnual'] > 0) s.pe = m['peNormalizedAnnual'];
+      if(m['dividendYieldIndicatedAnnual'] >= 0) s.divYield = m['dividendYieldIndicatedAnnual'];
+      if(m['payoutRatioAnnual'] > 0) s.payout = m['payoutRatioAnnual'];
+      if(m['52WeekHigh'] && m['52WeekLow']){
+        const range = m['52WeekHigh'] - m['52WeekLow'];
+        s.support = m['52WeekLow'] + range * 0.25;
+        s.resist  = m['52WeekHigh'] - range * 0.1;
+      }
+    } catch(e){
+      // keep static data on error
+    }
+    results.push(s);
+    // Rate limit: 60 calls/min → ~1s delay per 2 tickers
+    if(i % 2 === 1) await new Promise(r=>setTimeout(r,1050));
+  }
+  saveCache(results);
+  onProgress({pct:100, msg:`Fertig: ${results.length} Aktien`, phase:2});
+  return results;
+}
+
+function analyzePosition(pos){
+  const inTheMoney = pos.type==='put' ? pos.currentPrice < pos.strike : pos.currentPrice > pos.strike;
+  const intrinsic  = pos.type==='put'
+    ? Math.max(0, pos.strike - pos.currentPrice)
+    : Math.max(0, pos.currentPrice - pos.strike);
+  const timeValue  = Math.max(0, (pos.currentOptionPrice||0) - intrinsic);
+  const origPremium = (pos.premium||0) * (pos.contracts||1) * 100;
+  const closeCost   = (pos.currentOptionPrice||0) * (pos.contracts||1) * 100;
+  const unrealizedPnL = origPremium - closeCost;
+  const pnlPct = origPremium > 0 ? (unrealizedPnL/origPremium*100) : 0;
+  const dte = pos.daysToExpiry || 0;
+  const bePrice = pos.type==='put' ? pos.strike - pos.premium : pos.strike + pos.premium;
+
+  // Roll scenarios
+  const rollDetails = inTheMoney || dte <= 21 ? [
+    {level:1, label:'Niedriger Strike, 30d', netPrem: Math.round((pos.premium||0)*0.6*100), viable:true},
+    {level:2, label:'Gleicher Strike, 45d',  netPrem: Math.round((pos.premium||0)*0.3*100), viable:true},
+    {level:3, label:'Niedriger Strike, 2×',  netPrem: Math.round((pos.premium||0)*1.1*100), viable:pos.strike*0.9>bePrice},
+  ] : null;
+
+  let action, actionColor;
+  const profitPct = pnlPct;
+  if(profitPct >= 50){ action='GEWINN MITNEHMEN'; actionColor='green'; }
+  else if(dte <= 5)  { action='VERFALL BALD'; actionColor='amber'; }
+  else if(inTheMoney){ action='ROLLEN NÖTIG'; actionColor='red'; }
+  else if(dte <= 21) { action='ROLLEN PRÜFEN (21 DTE)'; actionColor='amber'; }
+  else               { action='HALTEN'; actionColor='blue'; }
+
+  const reasoning = inTheMoney
+    ? `Im Geld — Kurs $${pos.currentPrice?.toFixed(2)} vs Strike $${pos.strike}. Schließkosten: $${closeCost.toFixed(0)}.`
+    : profitPct >= 50
+    ? `50%+ Gewinn erreicht — Ludwig empfiehlt Gewinnmitnahme.`
+    : dte <= 21
+    ? `21 DTE erreicht — Rollentscheidung nach Ludwig-Kap.3.`
+    : `Position OK. DTE: ${dte}d, Zeitwert: $${timeValue.toFixed(2)}.`;
+
+  return {
+    ...pos, intrinsic, timeValue, closeCost, origPremium,
+    unrealizedPnL, pnlPct, bePrice, inTheMoney,
+    action, actionColor, reasoning, rollDetails,
+    currentPrice: pos.currentPrice || pos.strike,
+  };
+}
+
+return { CURATED_50, loadCache, saveCache, clearCache, runFullScreener, analyzePosition };
+})();
+
+</script>
 <script>
 // ════════════════════════════════════════════
 // DATA
@@ -1087,7 +1278,7 @@ function showDetail(ticker){
 // Direkter Sprung Screener → Optionskette
 function openChainFor(ticker, price){
   document.getElementById('ch-sym').value = ticker;
-  document.getElementById('ch-src').value = localStorage.getItem('tradier_key') ? 'tradier' : 'demo';
+  document.getElementById('ch-src').value = localStorage.getItem('tradier_key') ? 'polygon' : 'demo';
   showTab('chain');
   setTimeout(()=>{ loadExpirations(); }, 100);
 }
@@ -1527,14 +1718,12 @@ function onSrcChange(){
   if(src==='demo') loadDemoChain(document.getElementById('ch-sym').value||'AAPL');
 }
 
-function getHeaders(){
-  const k=localStorage.getItem('tradier_key')||'';
-  return{'Authorization':'Bearer '+k,'Accept':'application/json'};
+function getPolygonKey(){
+  return localStorage.getItem('tradier_key')||'';
 }
-function getBase(){
-  const e=localStorage.getItem('tradier_env')||'sandbox';
-  return e==='production'?'https://api.tradier.com':'https://sandbox.tradier.com';
-}
+// Legacy shims (unused but kept for safety)
+function getHeaders(){ return {'Accept':'application/json'}; }
+function getBase(){ return 'https://api.polygon.io'; }
 
 async function loadExpirations(){
   const sym=document.getElementById('ch-sym').value.trim().toUpperCase();
@@ -1544,11 +1733,14 @@ async function loadExpirations(){
   document.getElementById('expiry-chips').innerHTML='<span class="spinner"></span>';
   try{
     let exps=[];
-    if(src==='tradier'){
-      const r=await fetch(`${getBase()}/v1/markets/options/expirations?symbol=${sym}`,{headers:getHeaders()});
+    if(src==='polygon'){
+      const key=getPolygonKey();
+      if(!key) throw new Error('Kein Polygon-Key — bitte in Einstellungen eintragen');
+      const r=await fetch(`https://api.polygon.io/v3/reference/options/contracts?underlying_ticker=${sym}&expired=false&limit=50&apiKey=${key}`);
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
-      exps=(d.expirations?.date||[]).slice(0,10);
+      const dates=[...new Set((d.results||[]).map(c=>c.expiration_date))].sort().slice(0,12);
+      exps=dates;
     } else {
       const pu=document.getElementById('proxy-url')?.value||'http://localhost:5001';
       const r=await fetch(`${pu}/expirations?symbol=${sym}`);
@@ -1585,15 +1777,36 @@ async function loadChain(sym,exp){
   document.getElementById('chain-table').innerHTML='<span class="spinner"></span> Lade Optionskette...';
   try{
     let opts=[];
-    if(src==='tradier'){
-      const r=await fetch(`${getBase()}/v1/markets/options/chains?symbol=${sym}&expiration=${exp}&greeks=true`,{headers:getHeaders()});
+    if(src==='polygon'){
+      const key=getPolygonKey();
+      if(!key) throw new Error('Kein Polygon-Key — bitte in Einstellungen eintragen');
+      // Get stock quote
+      const qr=await fetch(`https://api.polygon.io/v2/last/trade/${sym}?apiKey=${key}`);
+      const qd=await qr.json();
+      if(qd.results?.p){ stockPrice=qd.results.p; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
+      // Get options chain for expiry
+      const type=document.getElementById('ch-type').value;
+      const typeFilter=type==='put'?'put':type==='call'?'call':'';
+      let url=`https://api.polygon.io/v3/snapshot/options/${sym}?expiration_date=${exp}&limit=100&apiKey=${key}`;
+      if(typeFilter) url+=`&contract_type=${typeFilter}`;
+      const r=await fetch(url);
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
-      opts=d.options?.option||[];
-      const qr=await fetch(`${getBase()}/v1/markets/quotes?symbols=${sym}`,{headers:getHeaders()});
-      const qd=await qr.json();
-      const q=qd.quotes?.quote;
-      if(q){ stockPrice=q.last||0; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
+      // Normalize Polygon format to our internal format
+      opts=(d.results||[]).map(o=>({
+        option_type: o.details?.contract_type||'put',
+        strike: o.details?.strike_price||0,
+        bid: o.day?.open||o.last_quote?.bid||0,
+        ask: o.last_quote?.ask||0,
+        last: o.last_trade?.price||o.day?.close||0,
+        open_interest: o.open_interest||0,
+        greeks:{
+          delta: o.greeks?.delta||0,
+          mid_iv: o.implied_volatility||0,
+          theta: o.greeks?.theta||0,
+          gamma: o.greeks?.gamma||0,
+        }
+      }));
     } else {
       const pu=document.getElementById('proxy-url')?.value||'http://localhost:5001';
       const ot=document.getElementById('ch-type').value==='put'?'P':'C';
@@ -1732,6 +1945,27 @@ function loadDemoChain(sym){
 // ════════════════════════════════════════════
 // SETTINGS
 // ════════════════════════════════════════════
+function saveIBKRSettings(){
+  localStorage.setItem('ibkr_api_url', document.getElementById('ibkr-api-url').value);
+  localStorage.setItem('ibkr_token',   document.getElementById('ibkr-token').value);
+  document.getElementById('ibkr-test-result').innerHTML='<span class="badge b-green">Gespeichert ✓</span>';
+}
+
+async function testIBKRWebAPI(){
+  const url   = document.getElementById('ibkr-api-url').value || 'https://localhost:5000/v1/api';
+  const token = document.getElementById('ibkr-token').value;
+  const el    = document.getElementById('ibkr-test-result');
+  el.innerHTML = '<span class="spinner"></span>';
+  try {
+    const headers = token ? {'Authorization':'Bearer '+token} : {};
+    const r = await fetch(`${url}/iserver/auth/status`, {headers, signal:AbortSignal.timeout(4000)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    el.innerHTML = `<div class="alert ok"><i class="ti ti-check"></i><div>IBKR Web API verbunden! Authenticated: ${d.authenticated}</div></div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="alert err"><i class="ti ti-alert-circle"></i><div>${e.message}<br><small>TWS → Konfiguration → API → Web API aktivieren</small></div></div>`;
+  }
+}
 function toggleFhKey(){
   const i=document.getElementById('fh-key-settings');
   const ic=document.getElementById('fh-eye');
@@ -1775,16 +2009,16 @@ function saveKey(){
   document.getElementById('key-result').innerHTML='<span class="badge b-green">Gespeichert ✓</span>';
 }
 async function testKey(){
-  const k=document.getElementById('api-key').value;
-  const e=document.getElementById('api-env').value;
-  const base=e==='production'?'https://api.tradier.com':'https://sandbox.tradier.com';
+  const k=document.getElementById('api-key').value.trim();
   const el=document.getElementById('key-result');
+  if(!k){el.innerHTML='<div class="alert err"><i class="ti ti-x"></i><div>Kein Key eingegeben</div></div>';return;}
   el.innerHTML='<span class="spinner"></span>';
   try{
-    const r=await fetch(`${base}/v1/markets/quotes?symbols=AAPL`,{headers:{'Authorization':'Bearer '+k,'Accept':'application/json'}});
-    if(!r.ok) throw new Error('HTTP '+r.status);
+    const r=await fetch(`https://api.polygon.io/v2/last/trade/AAPL?apiKey=${k}`);
+    if(!r.ok) throw new Error('HTTP '+r.status+' — Key ungültig?');
     const d=await r.json();
-    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>API-Key gültig! AAPL: $${d.quotes?.quote?.last||'?'}</div></div>`;
+    const price=d.results?.p||'?';
+    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>Polygon Key gültig! AAPL letzter Kurs: $${price}</div></div>`;
     localStorage.setItem('tradier_key',k);
   } catch(ex){
     el.innerHTML=`<div class="alert err"><i class="ti ti-x"></i><div>${ex.message}</div></div>`;
@@ -1932,11 +2166,15 @@ function analyzePositionLocal(pos){
   };
 }
 window.addEventListener('DOMContentLoaded',()=>{
+    // Restore IBKR settings
+  const ibkrUrl=localStorage.getItem("ibkr_api_url");
+  const ibkrToken=localStorage.getItem("ibkr_token");
+  if(ibkrUrl&&document.getElementById("ibkr-api-url")) document.getElementById("ibkr-api-url").value=ibkrUrl;
+  if(ibkrToken&&document.getElementById("ibkr-token")) document.getElementById("ibkr-token").value=ibkrToken;
   // Restore saved key
   const k=localStorage.getItem('tradier_key');
   if(k) document.getElementById('api-key').value=k;
-  const e=localStorage.getItem('tradier_env');
-  if(e) document.getElementById('api-env').value=e;
+  // api-env removed (Polygon has no env toggle)
   // Load journal from localStorage
   loadJournalFromStorage();
   const fhk=localStorage.getItem('finnhub_key');
