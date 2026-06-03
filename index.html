@@ -2032,7 +2032,7 @@ async function testKey(){
   const el=document.getElementById('key-result');
   el.innerHTML='<span class="spinner"></span>';
   try{
-    const url=proxy+'/?url='+encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=1d&interval=1d');
+    const url=proxy+'/?url='+encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/AAPL?range=1d%26interval=1d');
     const r=await fetch(url,{headers:{'User-Agent':'Mozilla/5.0'},signal:AbortSignal.timeout(6000)});
     if(!r.ok) throw new Error('HTTP '+r.status);
     const d=await r.json();
