@@ -697,7 +697,7 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
 <div>
   <div class="card card-sm">
     <div class="card-title"><i class="ti ti-key"></i>Polygon.io API-Key (Optionskette)</div>
-    <div class="alert ok"><i class="ti ti-info-circle"></i><div>Kostenloser Account auf <strong>polygon.io</strong> — nur E-Mail nötig, keine US-Steuer-ID. Verzögerte Optionsdaten + Greeks. Key bleibt nur lokal gespeichert.</div></div>
+    <div class="alert ok"><i class="ti ti-info-circle"></i><div>Account auf <strong>massive.com</strong> (ehem. Polygon.io) — nur E-Mail nötig, keine US-Steuer-ID. Verzögerte Optionsdaten + Greeks. Key bleibt nur lokal gespeichert.</div></div>
     <div class="frow"><label>API-Key</label>
       <div style="display:flex;gap:.4rem"><input type="password" id="api-key" placeholder="z.B. ukfoldTXM0..."><button class="btn sm" onclick="toggleKey()"><i class="ti ti-eye" id="eye-icon"></i></button></div>
     </div>
@@ -1723,7 +1723,7 @@ function getPolygonKey(){
 }
 // Legacy shims (unused but kept for safety)
 function getHeaders(){ return {'Accept':'application/json'}; }
-function getBase(){ return 'https://api.polygon.io'; }
+function getBase(){ return 'https://api.massive.com'; }
 
 async function loadExpirations(){
   const sym=document.getElementById('ch-sym').value.trim().toUpperCase();
@@ -1736,7 +1736,7 @@ async function loadExpirations(){
     if(src==='polygon'){
       const key=getPolygonKey();
       if(!key) throw new Error('Kein Polygon-Key — bitte in Einstellungen eintragen');
-      const r=await fetch(`https://api.polygon.io/v3/reference/options/contracts?underlying_ticker=${sym}&expired=false&limit=50&apiKey=${key}`);
+      const r=await fetch(`https://api.massive.com/v3/reference/options/contracts?underlying_ticker=${sym}&expired=false&limit=50&apiKey=${key}`);
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
       const dates=[...new Set((d.results||[]).map(c=>c.expiration_date))].sort().slice(0,12);
@@ -1781,13 +1781,13 @@ async function loadChain(sym,exp){
       const key=getPolygonKey();
       if(!key) throw new Error('Kein Polygon-Key — bitte in Einstellungen eintragen');
       // Get stock quote
-      const qr=await fetch(`https://api.polygon.io/v2/last/trade/${sym}?apiKey=${key}`);
+      const qr=await fetch(`https://api.massive.com/v2/last/trade/${sym}?apiKey=${key}`);
       const qd=await qr.json();
       if(qd.results?.p){ stockPrice=qd.results.p; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
       // Get options chain for expiry
       const type=document.getElementById('ch-type').value;
       const typeFilter=type==='put'?'put':type==='call'?'call':'';
-      let url=`https://api.polygon.io/v3/snapshot/options/${sym}?expiration_date=${exp}&limit=100&apiKey=${key}`;
+      let url=`https://api.massive.com/v3/snapshot/options/${sym}?expiration_date=${exp}&limit=100&apiKey=${key}`;
       if(typeFilter) url+=`&contract_type=${typeFilter}`;
       const r=await fetch(url);
       if(!r.ok) throw new Error('HTTP '+r.status);
@@ -2014,7 +2014,7 @@ async function testKey(){
   if(!k){el.innerHTML='<div class="alert err"><i class="ti ti-x"></i><div>Kein Key eingegeben</div></div>';return;}
   el.innerHTML='<span class="spinner"></span>';
   try{
-    const r=await fetch(`https://api.polygon.io/v2/last/trade/AAPL?apiKey=${k}`);
+    const r=await fetch(`https://api.massive.com/v2/last/trade/AAPL?apiKey=${k}`);
     if(!r.ok) throw new Error('HTTP '+r.status+' — Key ungültig?');
     const d=await r.json();
     const price=d.results?.p||'?';
