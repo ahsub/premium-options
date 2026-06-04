@@ -697,7 +697,7 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
 <div>
   <div class="card card-sm">
     <div class="card-title"><i class="ti ti-key"></i>Datenquellen (Yahoo Finance)</div>
-    <div class="alert ok"><i class="ti ti-info-circle"></i><div>Optionsketten via Finnhub (dein bestehender Key) + Cloudflare CORS-Proxy. Proxy-URL unten eintragen — Finnhub-Key in Screener-Einstellungen.</div></div>
+    <div class="alert ok"><i class="ti ti-info-circle"></i><div>Kurse via Finnhub (dein bestehender Key) + CORS-Proxy. Strikes + Prämien werden per Black-Scholes berechnet. Kein Optionsdaten-Abo nötig.</div></div>
     <div class="frow"><label>CORS-Proxy URL</label>
       <div style="display:flex;gap:.4rem"><input type="text" id="api-key" value="https://my-cors-proxy.ahildebrand.workers.dev" placeholder="https://my-cors-proxy.ahildebrand.workers.dev"><button class="btn sm" onclick="toggleKey()"><i class="ti ti-eye" id="eye-icon"></i></button></div>
     </div>
@@ -1702,6 +1702,36 @@ function renderIVChart(){
 }
 
 
+
+// ════════════════════════════════════════════
+// EXPIRY DATES: nächste 12 dritte Freitage
+// ════════════════════════════════════════════
+function getThirdFridays(n=12){
+  const results=[];
+  const now=new Date();
+  let year=now.getFullYear();
+  let month=now.getMonth(); // 0-based
+  while(results.length<n){
+    // Find third Friday of this month
+    const d=new Date(year,month,1);
+    let fridays=0;
+    while(fridays<3){
+      if(d.getDay()===5) fridays++;
+      if(fridays<3) d.setDate(d.getDate()+1);
+    }
+    const iso=d.toISOString().slice(0,10);
+    const daysAway=Math.round((d-now)/(1000*60*60*24));
+    if(daysAway>0) results.push(iso);
+    month++;
+    if(month>11){month=0;year++;}
+  }
+  return results.slice(0,n);
+}
+
+// DTE berechnen
+function getDTE(expDateStr){
+  return Math.max(1,Math.round((new Date(expDateStr+'T20:00:00Z')-new Date())/(1000*60*60*24)));
+}
 // ════════════════════════════════════════════
 // BLACK-SCHOLES (für Delta-Berechnung wenn Yahoo keine Greeks liefert)
 // ════════════════════════════════════════════
@@ -1755,19 +1785,14 @@ async function loadExpirations(){
   try{
     let exps=[];
     if(src==='finnhub'){
-      const fhKey=localStorage.getItem('finnhub_key')||localStorage.getItem('fh_key')||'';
-      if(!fhKey) throw new Error('Kein Finnhub-Key — bitte in Einstellungen eintragen');
-      const r=await fetch(proxyUrl(`https://finnhub.io/api/v1/stock/option-chain?symbol=${sym}&token=${fhKey}`));
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      const d=await r.json();
-      // Finnhub returns data array with expirationDate field
-      const dates=[...new Set((d.data||[]).map(o=>o.expirationDate))].sort().slice(0,12);
-      exps=dates.length>0 ? dates : ['Keine Daten'];
+      // Verfallsdaten: nächste 12 dritte Freitage (standard US equity options)
+      exps = getThirdFridays(12);
     } else {
-      const pu=document.getElementById('proxy-url')?.value||'http://localhost:5001';
-      const r=await fetch(`${pu}/expirations?symbol=${sym}`);
+      const pu=(document.getElementById('proxy-url')?.value||'https://localhost:5001').replace(/\/$/,'');
+      const r=await fetch(`${pu}/expirations/${sym}`,{mode:'cors'});
+      if(!r.ok) throw new Error('IBKR Proxy HTTP '+r.status);
       const d=await r.json();
-      exps=d.expirations||[];
+      exps=d.expirations||getThirdFridays(12);
     }
     renderExpiryChips(exps,sym);
   } catch(e){
@@ -1800,41 +1825,98 @@ async function loadChain(sym,exp){
   try{
     let opts=[];
     if(src==='finnhub'){
+      // ── Schritt 1: Echten Kurs von Finnhub holen ──
       const fhKey=localStorage.getItem('finnhub_key')||localStorage.getItem('fh_key')||'';
       if(!fhKey) throw new Error('Kein Finnhub-Key — bitte in Einstellungen eintragen');
-      // Get stock quote
       const qr=await fetch(proxyUrl(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${fhKey}`));
+      if(!qr.ok) throw new Error('Finnhub Quote HTTP '+qr.status);
       const qd=await qr.json();
-      if(qd.c>0){ stockPrice=qd.c; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
-      // Get options for this expiry
-      const r=await fetch(proxyUrl(`https://finnhub.io/api/v1/stock/option-chain?symbol=${sym}&token=${fhKey}`));
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      const d=await r.json();
-      // Filter by expiration date and normalize
+      if(qd.c>0){
+        stockPrice=qd.c;
+        document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2);
+      }
+
+      // ── Schritt 2: Strikes generieren (ITM bis OTM, $2.50 Schritte) ──
+      const dte=getDTE(exp);
+      const T=dte/365;
+      const r_=0.045;
+      // IV-Schätzung: historische Näherung basierend auf Kurs
+      // (reale IV liegt typisch 20-45% für große US-Aktien)
+      const baseIV = stockPrice > 500 ? 0.28 : stockPrice > 200 ? 0.30 : stockPrice > 100 ? 0.32 : 0.35;
+
+      // Strike-Range: -25% bis +15% vom Kurs, in $2.50-Schritten
+      const step = stockPrice > 400 ? 5 : stockPrice > 150 ? 2.5 : 1;
+      const minStrike = Math.round(stockPrice * 0.75 / step) * step;
+      const maxStrike = Math.round(stockPrice * 1.15 / step) * step;
       const chainType=document.getElementById('ch-type').value;
-      const filtered=(d.data||[]).filter(o=>o.expirationDate===exp);
-      opts=filtered.map(o=>{
-        const isCall=o.contractType==='Call'||o.contractType==='call';
-        const type=isCall?'call':'put';
-        const dte=Math.max(1,Math.round((new Date(o.expirationDate)-new Date())/(1000*60*60*24)));
-        const iv=(o.impliedVolatility||0.3);
-        const delta=bsDelta(stockPrice,o.strike,dte/365,0.045,iv,type);
-        return{
-          option_type:type,
-          strike:o.strike,
-          bid:o.bid||0,
-          ask:o.ask||0,
-          last:o.lastPrice||o.last||0,
-          open_interest:o.openInterest||0,
-          greeks:{delta,mid_iv:iv,theta:0,gamma:0}
-        };
-      }).filter(o=>chainType==='all'||o.option_type===chainType.replace('Put (CSP)','put').replace('Call (CC)','call'));
+
+      opts=[];
+      for(let strike=minStrike; strike<=maxStrike; strike+=step){
+        // IV-Skew: OTM puts haben höhere IV (volatility skew)
+        const moneyness = strike/stockPrice;
+        const skew = moneyness < 1 ? (1-moneyness)*0.3 : (moneyness-1)*0.1;
+        const iv = Math.max(0.15, Math.min(0.80, baseIV + skew));
+
+        // Black-Scholes Preis + Delta
+        const putDelta = bsDelta(stockPrice, strike, T, r_, iv, 'put');
+        const callDelta = bsDelta(stockPrice, strike, T, r_, iv, 'call');
+
+        // BS-Preis berechnen
+        function bsPrice(S,K,t,r,sigma,type){
+          if(t<=0) return Math.max(0,type==='call'?S-K:K-S);
+          const d1=(Math.log(S/K)+(r+sigma*sigma/2)*t)/(sigma*Math.sqrt(t));
+          const d2=d1-sigma*Math.sqrt(t);
+          if(type==='call') return S*bsNorm(d1)-K*Math.exp(-r*t)*bsNorm(d2);
+          return K*Math.exp(-r*t)*bsNorm(-d2)-S*bsNorm(-d1);
+        }
+
+        const putPrice = bsPrice(stockPrice,strike,T,r_,iv,'put');
+        const callPrice = bsPrice(stockPrice,strike,T,r_,iv,'call');
+
+        // Typischer Spread: 2-5% des Preises
+        const putSpread = Math.max(0.05, putPrice * 0.03);
+        const callSpread = Math.max(0.05, callPrice * 0.03);
+
+        // OI: grobe Schätzung — ATM höher
+        const distATM = Math.abs(strike - stockPrice)/stockPrice;
+        const oi = Math.round(Math.max(100, 5000 * Math.exp(-distATM*15) + Math.random()*500));
+
+        if(chainType!=='call'){
+          opts.push({
+            option_type:'put', strike,
+            bid: Math.max(0.01, putPrice-putSpread/2),
+            ask: putPrice+putSpread/2,
+            last: putPrice,
+            open_interest: oi,
+            greeks:{ delta: putDelta, mid_iv: iv, theta: -(putPrice*0.015/dte), gamma: 0 }
+          });
+        }
+        if(chainType!=='put' && chainType!=='Put (CSP)'){
+          opts.push({
+            option_type:'call', strike,
+            bid: Math.max(0.01, callPrice-callSpread/2),
+            ask: callPrice+callSpread/2,
+            last: callPrice,
+            open_interest: oi,
+            greeks:{ delta: callDelta, mid_iv: iv, theta: -(callPrice*0.015/dte), gamma: 0 }
+          });
+        }
+      }
     } else {
-      const pu=document.getElementById('proxy-url')?.value||'http://localhost:5001';
-      const ot=document.getElementById('ch-type').value==='put'?'P':'C';
-      const r=await fetch(`${pu}/chain?symbol=${sym}&expiration=${exp}&optionType=${ot}`);
+      // IBKR Proxy
+      const pu=(document.getElementById('proxy-url')?.value||'https://localhost:5001').replace(/\/$/,'');
+      const chainType=document.getElementById('ch-type').value;
+      const optType=chainType==='Put (CSP)'?'put':chainType==='Call (CC)'?'call':'all';
+      // Quote
+      const qr=await fetch(`${pu}/quote/${sym}`,{mode:'cors'});
+      const qd=await qr.json();
+      if(qd.price>0){ stockPrice=qd.price; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
+      // Chain
+      const r=await fetch(`${pu}/chain/${sym}/${exp}?type=${optType}`,{mode:'cors'});
+      if(!r.ok) throw new Error('IBKR Proxy HTTP '+r.status);
       const d=await r.json();
-      opts=d.options?.option||[];
+      if(d.stock_price>0){ stockPrice=d.stock_price; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
+      opts=(d.options||[]);
     }
     chainData=opts;
     filterChain();
