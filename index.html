@@ -2152,9 +2152,10 @@ async function testProxy(){
   const el=document.getElementById('proxy-result');
   el.innerHTML='<span class="spinner"></span>';
   try{
-    const r=await fetch(`${url}/quote?symbol=AAPL`,{signal:AbortSignal.timeout(3000)});
+    const r=await fetch(`${url}/health`,{mode:'cors',signal:AbortSignal.timeout(5000)});
     const d=await r.json();
-    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>IBKR-Proxy OK! AAPL: $${d.last||'?'}</div></div>`;
+    const msg=d.status==='ok'?`IBKR-Proxy OK! TWS verbunden (Server ${d.server})`:'Proxy läuft, TWS nicht verbunden';
+    el.innerHTML=`<div class="alert ${d.status==='ok'?'ok':'err'}"><i class="ti ti-check"></i><div>${msg}</div></div>`;
   } catch(ex){
     el.innerHTML=`<div class="alert err"><i class="ti ti-alert-circle"></i><div>Nicht erreichbar: ${ex.message}</div></div>`;
   }
