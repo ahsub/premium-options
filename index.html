@@ -1755,15 +1755,7 @@ async function loadExpirations(){
   try{
     let exps=[];
     if(src==='yahoo'){
-      // Direkt vom Browser — Yahoo erlaubt Browser-Requests
-      const r=await fetch(`https://query2.finance.yahoo.com/v8/finance/options/${sym}?formatted=false`, {
-        headers:{
-          'Accept':'application/json',
-          'Accept-Language':'en-US,en;q=0.9',
-        },
-        mode:'cors',
-        credentials:'include',
-      });
+      const r=await fetch(proxyUrl(`https://query2.finance.yahoo.com/v8/finance/options/${sym}?formatted=false`));
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
       exps=(d.optionChain?.result?.[0]?.expirationDates||[])
@@ -1808,15 +1800,7 @@ async function loadChain(sym,exp){
     if(src==='yahoo'){
       // Convert date string back to unix timestamp
       const ts = Math.floor(new Date(exp+'T20:00:00Z').getTime()/1000);
-      // Direkt vom Browser ohne Proxy
-      const r=await fetch(`https://query2.finance.yahoo.com/v8/finance/options/${sym}?date=${ts}&formatted=false`, {
-        headers:{
-          'Accept':'application/json',
-          'Accept-Language':'en-US,en;q=0.9',
-        },
-        mode:'cors',
-        credentials:'include',
-      });
+      const r=await fetch(proxyUrl(`https://query2.finance.yahoo.com/v8/finance/options/${sym}?date=${ts}&formatted=false`));
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
       const res=d.optionChain?.result?.[0];
@@ -2046,27 +2030,15 @@ async function testKey(){
   const el=document.getElementById('key-result');
   el.innerHTML='<span class="spinner"></span>';
   try{
-    // Test 1: Yahoo direkt
-    const yahooR=await fetch('https://query2.finance.yahoo.com/v8/finance/options/AAPL?formatted=false',{
-      headers:{'Accept':'application/json','Accept-Language':'en-US,en;q=0.9'},
-      mode:'cors', credentials:'include', signal:AbortSignal.timeout(8000)
-    });
-    const yahooOk = yahooR.ok;
-    const yahooD = yahooOk ? await yahooR.json() : null;
-    const price = yahooD?.optionChain?.result?.[0]?.quote?.regularMarketPrice||'?';
-    // Test 2: Proxy für Finnhub
-    let proxyOk = false;
-    try{
-      const pr=await fetch(proxy+'/?url='+encodeURIComponent('https://finnhub.io/api/v1/quote?symbol=AAPL&token=test'),
-        {signal:AbortSignal.timeout(5000)});
-      proxyOk = pr.status !== 0;
-    }catch(e){}
+    // Test: Proxy + Yahoo Finance Options
+    const testUrl = proxy+'/?url='+encodeURIComponent('https://query2.finance.yahoo.com/v8/finance/options/AAPL?formatted=false');
+    const r=await fetch(testUrl, {signal:AbortSignal.timeout(15000)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    const price = d?.optionChain?.result?.[0]?.quote?.regularMarketPrice||'?';
+    const nOpts = d?.optionChain?.result?.[0]?.options?.[0]?.puts?.length||0;
     localStorage.setItem('tradier_key',proxy);
-    if(yahooOk){
-      el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>Yahoo Finance OK! AAPL: $${typeof price==='number'?price.toFixed(2):price} · Proxy: ${proxyOk?'✓':'(nicht erreichbar)'}</div></div>`;
-    } else {
-      el.innerHTML=`<div class="alert err"><i class="ti ti-x"></i><div>Yahoo HTTP ${yahooR.status} — möglicherweise außerhalb der Handelszeiten</div></div>`;
-    }
+    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>Proxy + Yahoo Finance OK! AAPL: $${typeof price==='number'?price.toFixed(2):price} · ${nOpts} Puts geladen</div></div>`;
   } catch(ex){
     el.innerHTML=`<div class="alert err"><i class="ti ti-x"></i><div>Fehler: ${ex.message}<br><small>Proxy-URL korrekt? Cloudflare Worker aktiv?</small></div></div>`;
   }
