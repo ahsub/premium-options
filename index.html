@@ -1755,7 +1755,7 @@ async function loadExpirations(){
   try{
     let exps=[];
     if(src==='finnhub'){
-      const fhKey=localStorage.getItem('fh_key')||'';
+      const fhKey=localStorage.getItem('finnhub_key')||localStorage.getItem('fh_key')||'';
       if(!fhKey) throw new Error('Kein Finnhub-Key — bitte in Einstellungen eintragen');
       const r=await fetch(proxyUrl(`https://finnhub.io/api/v1/stock/option-chain?symbol=${sym}&token=${fhKey}`));
       if(!r.ok) throw new Error('HTTP '+r.status);
@@ -1800,7 +1800,7 @@ async function loadChain(sym,exp){
   try{
     let opts=[];
     if(src==='finnhub'){
-      const fhKey=localStorage.getItem('fh_key')||'';
+      const fhKey=localStorage.getItem('finnhub_key')||localStorage.getItem('fh_key')||'';
       if(!fhKey) throw new Error('Kein Finnhub-Key — bitte in Einstellungen eintragen');
       // Get stock quote
       const qr=await fetch(proxyUrl(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${fhKey}`));
@@ -2035,7 +2035,7 @@ async function testKey(){
   el.innerHTML='<span class="spinner"></span>';
   try{
     // Test: Proxy + Finnhub Quote
-    const fhKey=document.getElementById('fh-key-settings')?.value||localStorage.getItem('fh_key')||'';
+    const fhKey=document.getElementById('fh-key-settings')?.value||localStorage.getItem('finnhub_key')||localStorage.getItem('fh_key')||'';
     const testUrl = proxy+'/?url='+encodeURIComponent(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${fhKey}`);
     const r=await fetch(testUrl, {signal:AbortSignal.timeout(10000)});
     if(!r.ok) throw new Error('HTTP '+r.status);
