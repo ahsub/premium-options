@@ -346,7 +346,7 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
       <div class="frow" style="margin-bottom:0;flex:1;min-width:80px"><label>Ticker</label><input type="text" id="ch-sym" value="AAPL" oninput="this.value=this.value.toUpperCase()"></div>
       <div class="frow" style="margin-bottom:0"><label>Quelle</label>
         <select id="ch-src" onchange="onSrcChange()">
-          <option value="yahoo">Yahoo Finance</option>
+          <option value="finnhub">Finnhub</option>
           <option value="ibkr">IBKR Web API (lokal)</option>
           <option value="demo" selected>Demo</option>
         </select>
@@ -697,7 +697,7 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
 <div>
   <div class="card card-sm">
     <div class="card-title"><i class="ti ti-key"></i>Datenquellen (Yahoo Finance)</div>
-    <div class="alert ok"><i class="ti ti-info-circle"></i><div>Kein API-Key nötig! Optionsketten + Kurse via Yahoo Finance und deinem Cloudflare CORS-Proxy. Proxy-URL unten eintragen.</div></div>
+    <div class="alert ok"><i class="ti ti-info-circle"></i><div>Optionsketten via Finnhub (dein bestehender Key) + Cloudflare CORS-Proxy. Proxy-URL unten eintragen — Finnhub-Key in Screener-Einstellungen.</div></div>
     <div class="frow"><label>CORS-Proxy URL</label>
       <div style="display:flex;gap:.4rem"><input type="text" id="api-key" value="https://my-cors-proxy.ahildebrand.workers.dev" placeholder="https://my-cors-proxy.ahildebrand.workers.dev"><button class="btn sm" onclick="toggleKey()"><i class="ti ti-eye" id="eye-icon"></i></button></div>
     </div>
@@ -1278,7 +1278,7 @@ function showDetail(ticker){
 // Direkter Sprung Screener → Optionskette
 function openChainFor(ticker, price){
   document.getElementById('ch-sym').value = ticker;
-  document.getElementById('ch-src').value = 'yahoo';
+  document.getElementById('ch-src').value = 'finnhub';
   showTab('chain');
   setTimeout(()=>{ loadExpirations(); }, 100);
 }
@@ -1754,13 +1754,15 @@ async function loadExpirations(){
   document.getElementById('expiry-chips').innerHTML='<span class="spinner"></span>';
   try{
     let exps=[];
-    if(src==='yahoo'){
-      const r=await fetch(proxyUrl(`https://query2.finance.yahoo.com/v8/finance/options/${sym}?formatted=false`));
+    if(src==='finnhub'){
+      const fhKey=localStorage.getItem('fh_key')||'';
+      if(!fhKey) throw new Error('Kein Finnhub-Key — bitte in Einstellungen eintragen');
+      const r=await fetch(proxyUrl(`https://finnhub.io/api/v1/stock/option-chain?symbol=${sym}&token=${fhKey}`));
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
-      exps=(d.optionChain?.result?.[0]?.expirationDates||[])
-        .map(ts=>new Date(ts*1000).toISOString().slice(0,10))
-        .slice(0,12);
+      // Finnhub returns data array with expirationDate field
+      const dates=[...new Set((d.data||[]).map(o=>o.expirationDate))].sort().slice(0,12);
+      exps=dates.length>0 ? dates : ['Keine Daten'];
     } else {
       const pu=document.getElementById('proxy-url')?.value||'http://localhost:5001';
       const r=await fetch(`${pu}/expirations?symbol=${sym}`);
@@ -1797,34 +1799,36 @@ async function loadChain(sym,exp){
   document.getElementById('chain-table').innerHTML='<span class="spinner"></span> Lade Optionskette...';
   try{
     let opts=[];
-    if(src==='yahoo'){
-      // Convert date string back to unix timestamp
-      const ts = Math.floor(new Date(exp+'T20:00:00Z').getTime()/1000);
-      const r=await fetch(proxyUrl(`https://query2.finance.yahoo.com/v8/finance/options/${sym}?date=${ts}&formatted=false`));
+    if(src==='finnhub'){
+      const fhKey=localStorage.getItem('fh_key')||'';
+      if(!fhKey) throw new Error('Kein Finnhub-Key — bitte in Einstellungen eintragen');
+      // Get stock quote
+      const qr=await fetch(proxyUrl(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${fhKey}`));
+      const qd=await qr.json();
+      if(qd.c>0){ stockPrice=qd.c; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
+      // Get options for this expiry
+      const r=await fetch(proxyUrl(`https://finnhub.io/api/v1/stock/option-chain?symbol=${sym}&token=${fhKey}`));
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
-      const res=d.optionChain?.result?.[0];
-      if(!res) throw new Error('Keine Daten von Yahoo Finance');
-      // Stock price
-      const q=res.quote;
-      if(q?.regularMarketPrice){ stockPrice=q.regularMarketPrice; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
-      // Normalize Yahoo options format → internal format
-      const normalize=(arr,type)=>(arr||[]).map(o=>({
-        option_type: type,
-        strike: o.strike,
-        bid: o.bid||0,
-        ask: o.ask||0,
-        last: o.lastPrice||0,
-        open_interest: o.openInterest||0,
-        greeks:{
-          delta: type==='put'?-(o.delta||bsDelta(stockPrice,o.strike,o.daysToExpiration/365,0.045,o.impliedVolatility||0.3,'put'))
-                             :(o.delta||bsDelta(stockPrice,o.strike,o.daysToExpiration/365,0.045,o.impliedVolatility||0.3,'call')),
-          mid_iv: o.impliedVolatility||0,
-          theta: o.theta||0,
-          gamma: o.gamma||0,
-        }
-      }));
-      opts=[...normalize(res.options?.[0]?.puts,'put'),...normalize(res.options?.[0]?.calls,'call')];
+      // Filter by expiration date and normalize
+      const chainType=document.getElementById('ch-type').value;
+      const filtered=(d.data||[]).filter(o=>o.expirationDate===exp);
+      opts=filtered.map(o=>{
+        const isCall=o.contractType==='Call'||o.contractType==='call';
+        const type=isCall?'call':'put';
+        const dte=Math.max(1,Math.round((new Date(o.expirationDate)-new Date())/(1000*60*60*24)));
+        const iv=(o.impliedVolatility||0.3);
+        const delta=bsDelta(stockPrice,o.strike,dte/365,0.045,iv,type);
+        return{
+          option_type:type,
+          strike:o.strike,
+          bid:o.bid||0,
+          ask:o.ask||0,
+          last:o.lastPrice||o.last||0,
+          open_interest:o.openInterest||0,
+          greeks:{delta,mid_iv:iv,theta:0,gamma:0}
+        };
+      }).filter(o=>chainType==='all'||o.option_type===chainType.replace('Put (CSP)','put').replace('Call (CC)','call'));
     } else {
       const pu=document.getElementById('proxy-url')?.value||'http://localhost:5001';
       const ot=document.getElementById('ch-type').value==='put'?'P':'C';
@@ -2030,15 +2034,15 @@ async function testKey(){
   const el=document.getElementById('key-result');
   el.innerHTML='<span class="spinner"></span>';
   try{
-    // Test: Proxy + Yahoo Finance Options
-    const testUrl = proxy+'/?url='+encodeURIComponent('https://query2.finance.yahoo.com/v8/finance/options/AAPL?formatted=false');
-    const r=await fetch(testUrl, {signal:AbortSignal.timeout(15000)});
+    // Test: Proxy + Finnhub Quote
+    const fhKey=document.getElementById('fh-key-settings')?.value||localStorage.getItem('fh_key')||'';
+    const testUrl = proxy+'/?url='+encodeURIComponent(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${fhKey}`);
+    const r=await fetch(testUrl, {signal:AbortSignal.timeout(10000)});
     if(!r.ok) throw new Error('HTTP '+r.status);
     const d=await r.json();
-    const price = d?.optionChain?.result?.[0]?.quote?.regularMarketPrice||'?';
-    const nOpts = d?.optionChain?.result?.[0]?.options?.[0]?.puts?.length||0;
+    const price = d?.c||'?';
     localStorage.setItem('tradier_key',proxy);
-    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>Proxy + Yahoo Finance OK! AAPL: $${typeof price==='number'?price.toFixed(2):price} · ${nOpts} Puts geladen</div></div>`;
+    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>Proxy OK! AAPL via Finnhub: $${typeof price==='number'?price.toFixed(2):price}</div></div>`;
   } catch(ex){
     el.innerHTML=`<div class="alert err"><i class="ti ti-x"></i><div>Fehler: ${ex.message}<br><small>Proxy-URL korrekt? Cloudflare Worker aktiv?</small></div></div>`;
   }
