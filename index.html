@@ -730,7 +730,7 @@ python ibkr_options_proxy.py  # startet auf https://localhost:5001
 
 # Einmalig: https://localhost:5001 im Browser öffnen
 # → "Erweitert" → "Weiter zu localhost" → fertig</div>
-    <div class="frow" style="margin-top:.5rem"><label>Proxy-URL</label><input type="text" id="proxy-url" value="https://localhost:5001"></div>
+    <div class="frow" style="margin-top:.5rem"><label>Proxy-URL</label><input type="text" id="proxy-url" value="http://localhost:5001"></div>
     <button class="btn" onclick="testProxy()"><i class="ti ti-wifi"></i>Verbindung testen</button>
     <div id="proxy-result" style="margin-top:.5rem"></div>
   </div>
@@ -1793,7 +1793,7 @@ async function loadExpirations(){
       // Verfallsdaten: nächste 12 dritte Freitage (standard US equity options)
       exps = getThirdFridays(12);
     } else {
-      const pu=(document.getElementById('proxy-url')?.value||'https://localhost:5001').replace(/\/$/,'');
+      const pu=(document.getElementById('proxy-url')?.value||'http://localhost:5001').replace(/\/$/,'');
       const r=await fetch(`${pu}/expirations/${sym}`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'}});
       if(!r.ok) throw new Error('IBKR Proxy HTTP '+r.status);
       const d=await r.json();
@@ -1909,7 +1909,7 @@ async function loadChain(sym,exp){
       }
     } else {
       // IBKR Proxy
-      const pu=(document.getElementById('proxy-url')?.value||'https://localhost:5001').replace(/\/$/,'');
+      const pu=(document.getElementById('proxy-url')?.value||'http://localhost:5001').replace(/\/$/,'');
       const chainType=document.getElementById('ch-type').value;
       const optType=chainType==='Put (CSP)'?'put':chainType==='Call (CC)'?'call':'all';
       // Quote
