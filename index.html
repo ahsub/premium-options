@@ -1755,7 +1755,7 @@ async function loadExpirations(){
   try{
     let exps=[];
     if(src==='yahoo'){
-      const r=await fetch(proxyUrl(`https://query1.finance.yahoo.com/v7/finance/options/${sym}`),
+      const r=await fetch(proxyUrl(`https://query2.finance.yahoo.com/v8/finance/options/${sym}?formatted=false`),
         {headers:{'User-Agent':'Mozilla/5.0'}});
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
@@ -1801,7 +1801,7 @@ async function loadChain(sym,exp){
     if(src==='yahoo'){
       // Convert date string back to unix timestamp
       const ts = Math.floor(new Date(exp+'T20:00:00Z').getTime()/1000);
-      const r=await fetch(proxyUrl(`https://query1.finance.yahoo.com/v7/finance/options/${sym}?date=${ts}`),
+      const r=await fetch(proxyUrl(`https://query2.finance.yahoo.com/v8/finance/options/${sym}?date=${ts}&formatted=false`),
         {headers:{'User-Agent':'Mozilla/5.0'}});
       if(!r.ok) throw new Error('HTTP '+r.status);
       const d=await r.json();
