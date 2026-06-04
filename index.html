@@ -1794,7 +1794,7 @@ async function loadExpirations(){
       exps = getThirdFridays(12);
     } else {
       const pu=(document.getElementById('proxy-url')?.value||'https://localhost:5001').replace(/\/$/,'');
-      const r=await fetch(`${pu}/expirations/${sym}`,{mode:'cors'});
+      const r=await fetch(`${pu}/expirations/${sym}`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'}});
       if(!r.ok) throw new Error('IBKR Proxy HTTP '+r.status);
       const d=await r.json();
       exps=d.expirations||getThirdFridays(12);
@@ -1913,11 +1913,11 @@ async function loadChain(sym,exp){
       const chainType=document.getElementById('ch-type').value;
       const optType=chainType==='Put (CSP)'?'put':chainType==='Call (CC)'?'call':'all';
       // Quote
-      const qr=await fetch(`${pu}/quote/${sym}`,{mode:'cors'});
+      const qr=await fetch(`${pu}/quote/${sym}`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'}});
       const qd=await qr.json();
       if(qd.price>0){ stockPrice=qd.price; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
       // Chain
-      const r=await fetch(`${pu}/chain/${sym}/${exp}?type=${optType}`,{mode:'cors'});
+      const r=await fetch(`${pu}/chain/${sym}/${exp}?type=${optType}`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'}});
       if(!r.ok) throw new Error('IBKR Proxy HTTP '+r.status);
       const d=await r.json();
       if(d.stock_price>0&&!isNaN(d.stock_price)){ stockPrice=d.stock_price; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
@@ -2152,7 +2152,7 @@ async function testProxy(){
   const el=document.getElementById('proxy-result');
   el.innerHTML='<span class="spinner"></span>';
   try{
-    const r=await fetch(`${url}/health`,{mode:'cors',signal:AbortSignal.timeout(5000)});
+    const r=await fetch(`${url}/health`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'},signal:AbortSignal.timeout(5000)});
     const d=await r.json();
     const msg=d.status==='ok'?`IBKR-Proxy OK! TWS verbunden (Server ${d.server})`:'Proxy läuft, TWS nicht verbunden';
     el.innerHTML=`<div class="alert ${d.status==='ok'?'ok':'err'}"><i class="ti ti-check"></i><div>${msg}</div></div>`;
