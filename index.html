@@ -1732,6 +1732,11 @@ function getThirdFridays(n=12){
 function getDTE(expDateStr){
   return Math.max(1,Math.round((new Date(expDateStr+'T20:00:00Z')-new Date())/(1000*60*60*24)));
 }
+
+function safeNum(v, decimals=2){ 
+  if(v===null||v===undefined||isNaN(v)||!isFinite(v)) return 0; 
+  return +parseFloat(v).toFixed(decimals); 
+}
 // ════════════════════════════════════════════
 // BLACK-SCHOLES (für Delta-Berechnung wenn Yahoo keine Greeks liefert)
 // ════════════════════════════════════════════
@@ -1915,8 +1920,21 @@ async function loadChain(sym,exp){
       const r=await fetch(`${pu}/chain/${sym}/${exp}?type=${optType}`,{mode:'cors'});
       if(!r.ok) throw new Error('IBKR Proxy HTTP '+r.status);
       const d=await r.json();
-      if(d.stock_price>0){ stockPrice=d.stock_price; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
-      opts=(d.options||[]);
+      if(d.stock_price>0&&!isNaN(d.stock_price)){ stockPrice=d.stock_price; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
+      opts=(d.options||[]).map(o=>({
+        ...o,
+        bid: isNaN(o.bid)||o.bid==null ? 0 : o.bid,
+        ask: isNaN(o.ask)||o.ask==null ? 0 : o.ask,
+        last: isNaN(o.last)||o.last==null ? 0 : o.last,
+        mid: isNaN(o.mid)||o.mid==null ? ((o.bid||0)+(o.ask||0))/2 : o.mid,
+        open_interest: isNaN(o.open_interest)||o.open_interest==null ? 0 : o.open_interest,
+        greeks: {
+          delta: isNaN(o.greeks?.delta) ? 0 : (o.greeks?.delta||0),
+          mid_iv: isNaN(o.greeks?.mid_iv) ? 0 : (o.greeks?.mid_iv||0),
+          gamma: isNaN(o.greeks?.gamma) ? 0 : (o.greeks?.gamma||0),
+          theta: isNaN(o.greeks?.theta) ? 0 : (o.greeks?.theta||0),
+        }
+      }));
     }
     chainData=opts;
     filterChain();
