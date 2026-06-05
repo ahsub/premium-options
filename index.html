@@ -166,7 +166,7 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
   <button class="nav-tab" onclick="showTab('rolling')" id="tab-rolling"><i class="ti ti-refresh"></i>Roll-Manager</button>
   <button class="nav-tab" onclick="showTab('journal')" id="tab-journal"><i class="ti ti-notebook"></i>Journal</button>
   <button class="nav-tab" onclick="showTab('market')" id="tab-market"><i class="ti ti-world"></i>Markt</button>
-  <button class="nav-tab" onclick="showTab('portfolio')" id="tab-portfolio"><i class="ti ti-briefcase"></i>Portfolio</button>
+  <button class="nav-tab" onclick="showTab('portfolio')" id="tab-portfolio"><i class="ti ti-stethoscope"></i>Optionen-Doktor</button>
   <button class="nav-tab" onclick="showTab('settings')" id="tab-settings"><i class="ti ti-settings"></i></button>
 </div>
 
@@ -644,54 +644,67 @@ td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
      TAB: PORTFOLIO-ANALYSE
 ═══════════════════════════════════════════ -->
 <div class="content hidden" id="pane-portfolio">
-<div class="alert info"><i class="ti ti-camera"></i><div><strong>Screenshot-Dump:</strong> Bestehende Optionspositionen hier eingeben (aus TWS/CapTrader) → automatische Empfehlung: Halten / Gewinn mitnehmen / Rollen (Stufe 1–3) / Ausübung.</div></div>
-<div class="g2">
-<div>
-  <div class="card card-sm">
-    <div class="card-title"><i class="ti ti-plus"></i>Position erfassen</div>
-    <div class="g2">
-      <div class="frow"><label>Ticker</label><input type="text" id="pa-ticker" placeholder="AAPL" oninput="this.value=this.value.toUpperCase()"></div>
-      <div class="frow"><label>Typ</label><select id="pa-type"><option value="put">Put (CSP)</option><option value="call">Call (CC)</option></select></div>
-      <div class="frow"><label>Strike ($)</label><input type="number" id="pa-strike" placeholder="55.00"></div>
-      <div class="frow"><label>Verfall</label><input type="date" id="pa-expiry"></div>
-      <div class="frow"><label>Vereinnahmte Prämie ($)</label><input type="number" id="pa-premium" placeholder="1.20" step="0.01"></div>
-      <div class="frow"><label>Aktueller Options-Kurs ($)</label><input type="number" id="pa-optprice" placeholder="0.45" step="0.01"></div>
-      <div class="frow"><label>Aktueller Aktienkurs ($)</label><input type="number" id="pa-stockprice" placeholder="54.80"></div>
-      <div class="frow"><label>Kontrakte</label><input type="number" id="pa-contracts" value="1"></div>
-    </div>
-    <button class="btn primary" style="width:100%;margin-top:.25rem" onclick="addPortfolioPosition()"><i class="ti ti-plus"></i>Position analysieren</button>
+
+<!-- ═══ HEADER ═══ -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+  <div>
+    <h2 style="margin:0;font-size:1.1rem;font-weight:600">⚕️ Options-Doktor</h2>
+    <p style="margin:0;font-size:12px;color:var(--text2)">Positions-Analyse, Roll-Empfehlungen & Steuerhinweise</p>
   </div>
-  <div class="card card-sm">
-    <div class="card-title"><i class="ti ti-upload"></i>CSV-Import (aus TWS/CapTrader)</div>
-    <div style="font-size:11px;color:var(--text2);margin-bottom:.4rem">Ticker, Typ, Strike, Verfall, Prämie, Opt.Kurs, Aktienkurs, Kontrakte</div>
-    <textarea id="pa-csv" rows="4" style="font-family:var(--font-mono);font-size:11px;width:100%;padding:6px;border:.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);resize:vertical" placeholder="AAPL,put,52,2026-07-18,1.20,0.45,54.80,1&#10;MRK,put,54,2026-07-18,1.30,0.60,55.20,1"></textarea>
-    <div style="display:flex;gap:.5rem;margin-top:.5rem">
-      <button class="btn primary" style="flex:1" onclick="importCSV()"><i class="ti ti-file-import"></i>Importieren</button>
-      <button class="btn sm" onclick="clearPortfolio()"><i class="ti ti-trash"></i>Alle löschen</button>
-    </div>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <button class="btn primary" onclick="ibkrImportAll()"><i class="ti ti-download"></i>Von IBKR importieren</button>
+    <button class="btn" onclick="showAddPositionForm()"><i class="ti ti-plus"></i>Manuell hinzufügen</button>
+    <button class="btn" onclick="analyzeAllPositions()"><i class="ti ti-stethoscope"></i>Alle analysieren</button>
   </div>
-</div>
-<div>
-  <div class="card card-sm">
-    <div class="card-title"><i class="ti ti-chart-pie"></i>Übersicht</div>
-    <div class="g4">
-      <div class="metric"><div class="metric-label">Positionen</div><div class="metric-value" id="pa-count">0</div></div>
-      <div class="metric"><div class="metric-label">Gesamt P&L</div><div class="metric-value" id="pa-pnl">–</div></div>
-      <div class="metric"><div class="metric-label">Roll nötig</div><div class="metric-value neg" id="pa-roll">0</div></div>
-      <div class="metric"><div class="metric-label">Gewinn-ready</div><div class="metric-value pos" id="pa-win">0</div></div>
-    </div>
-  </div>
-  <div class="card card-sm" style="min-height:200px">
-    <div class="card-title"><i class="ti ti-list-check"></i>Empfehlungen (Ludwig Kap. 3)</div>
-    <div id="pa-results"><div style="color:var(--text2);font-size:13px;text-align:center;padding:2rem 0"><i class="ti ti-briefcase" style="font-size:28px;display:block;margin-bottom:.5rem;opacity:.4"></i>Positionen links eingeben oder CSV importieren</div></div>
-  </div>
-</div>
-</div>
 </div>
 
-<!-- ═══════════════════════════════════════════
-     TAB 7: EINSTELLUNGEN
-═══════════════════════════════════════════ -->
+<!-- ═══ IBKR IMPORT STATUS ═══ -->
+<div id="import-status" style="margin-bottom:1rem"></div>
+
+<!-- ═══ MANUELLE EINGABE (eingeklappt) ═══ -->
+<div id="add-position-form" style="display:none;margin-bottom:1rem">
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-pencil"></i>Position manuell erfassen</div>
+    <div class="g2">
+      <div class="frow"><label>Ticker</label><input type="text" id="doc-ticker" placeholder="AAPL" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="frow"><label>Typ</label>
+        <select id="doc-type">
+          <option value="CSP">Cash Secured Put (CSP)</option>
+          <option value="CC">Covered Call (CC)</option>
+          <option value="STRANGLE">Strangle</option>
+          <option value="IRON_CONDOR">Iron Condor</option>
+          <option value="STOCK">Aktie (long)</option>
+        </select>
+      </div>
+      <div class="frow"><label>Strike ($)</label><input type="number" id="doc-strike" step="0.5"></div>
+      <div class="frow"><label>Verfall</label><input type="date" id="doc-expiry"></div>
+      <div class="frow"><label>Erhaltene Prämie ($)</label><input type="number" id="doc-premium" step="0.01"></div>
+      <div class="frow"><label>Kontrakte</label><input type="number" id="doc-contracts" value="1"></div>
+      <div class="frow"><label>Einstandskurs Aktie ($)</label><input type="number" id="doc-cost-basis" step="0.01" placeholder="Nur für CC"></div>
+      <div class="frow"><label>Anzahl Aktien</label><input type="number" id="doc-shares" placeholder="Nur für CC/Aktie"></div>
+    </div>
+    <div style="display:flex;gap:.5rem;margin-top:.75rem">
+      <button class="btn primary" onclick="addManualPosition()"><i class="ti ti-check"></i>Hinzufügen</button>
+      <button class="btn" onclick="document.getElementById('add-position-form').style.display='none'"><i class="ti ti-x"></i>Abbrechen</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ POSITIONS-LISTE ═══ -->
+<div id="positions-list">
+  <div class="alert info" style="margin-bottom:1rem">
+    <i class="ti ti-info-circle"></i>
+    <div>Klicke auf <strong>"Von IBKR importieren"</strong> um alle offenen Positionen automatisch zu laden (TWS muss laufen), oder füge Positionen manuell hinzu.</div>
+  </div>
+</div>
+
+<!-- ═══ DIAGNOSE PANEL ═══ -->
+<div id="diagnosis-panel" style="display:none;margin-top:1rem"></div>
+
+</div>
+
+
+<!-- settings -->
 <div class="content hidden" id="pane-settings">
 <div class="g2">
 <div>
@@ -2147,18 +2160,20 @@ async function testKey(){
     el.innerHTML=`<div class="alert err"><i class="ti ti-x"></i><div>Fehler: ${ex.message}<br><small>Proxy-URL korrekt? Cloudflare Worker aktiv?</small></div></div>`;
   }
 }
-async function testProxy(){
+function testProxy(){
   const url=document.getElementById('proxy-url').value;
   const el=document.getElementById('proxy-result');
   el.innerHTML='<span class="spinner"></span>';
-  try{
-    const r=await fetch(`${url}/health`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'},signal:AbortSignal.timeout(5000)});
-    const d=await r.json();
-    const msg=d.status==='ok'?`IBKR-Proxy OK! TWS verbunden (Server ${d.server})`:'Proxy läuft, TWS nicht verbunden';
-    el.innerHTML=`<div class="alert ${d.status==='ok'?'ok':'err'}"><i class="ti ti-check"></i><div>${msg}</div></div>`;
-  } catch(ex){
-    el.innerHTML=`<div class="alert err"><i class="ti ti-alert-circle"></i><div>Nicht erreichbar: ${ex.message}</div></div>`;
-  }
+  (async()=>{
+    try{
+      const r=await fetch(`${url}/health`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'},signal:AbortSignal.timeout(20000)});
+      const d=await r.json();
+      const msg=d.status==='ok'?`IBKR-Proxy OK! TWS verbunden (Server ${d.server})`:'Proxy läuft, TWS nicht verbunden';
+      el.innerHTML=`<div class="alert ${d.status==='ok'?'ok':'err'}"><i class="ti ti-check"></i><div>${msg}</div></div>`;
+    } catch(ex){
+      el.innerHTML=`<div class="alert err"><i class="ti ti-alert-circle"></i><div>Nicht erreichbar: ${ex.message}</div></div>`;
+    }
+  })();
 }
 function savePrefs(){
   localStorage.setItem('pref_delta',document.getElementById('pref-delta').value);
@@ -2320,6 +2335,544 @@ window.addEventListener('DOMContentLoaded',()=>{
   renderJournal();
   calcReturn();
 });
+
+
+// ═══ OPTIONS-DOKTOR ═══
+// ════════════════════════════════════════════════════════
+// OPTIONS-DOKTOR — Positions-Analyse & Roll-Empfehlungen
+// ════════════════════════════════════════════════════════
+
+// Globaler Positions-Store
+window.odPositions = JSON.parse(localStorage.getItem('od_positions') || '[]');
+
+function saveODPositions(){
+  localStorage.setItem('od_positions', JSON.stringify(window.odPositions));
+}
+
+function showAddPositionForm(){
+  document.getElementById('add-position-form').style.display = 'block';
+  document.getElementById('doc-expiry').value = new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+}
+
+// ── IBKR Import ──────────────────────────────────────
+async function ibkrImportAll(){
+  const pu = (document.getElementById('proxy-url')?.value || 'http://localhost:5001').replace(/\/$/,'');
+  const el = document.getElementById('import-status');
+  el.innerHTML = '<div class="alert info"><i class="ti ti-loader ti-spin"></i><div>Importiere Positionen von IBKR/CapTrader...</div></div>';
+  try {
+    const r = await fetch(`${pu}/positions`, {
+      mode: 'cors',
+      headers: {'ngrok-skip-browser-warning':'true'},
+      signal: AbortSignal.timeout(30000)
+    });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+
+    // Merge with existing positions (avoid duplicates)
+    const imported = d.positions || [];
+    let added = 0, updated = 0;
+    imported.forEach(p => {
+      const existing = window.odPositions.findIndex(e =>
+        e.ticker === p.ticker && e.strike === p.strike &&
+        e.expiry === p.expiry && e.type === p.type
+      );
+      if(existing >= 0){
+        window.odPositions[existing] = {...window.odPositions[existing], ...p, source:'ibkr'};
+        updated++;
+      } else {
+        window.odPositions.push({...p, source:'ibkr', id: Date.now()+Math.random()});
+        added++;
+      }
+    });
+    saveODPositions();
+    el.innerHTML = `<div class="alert ok"><i class="ti ti-check"></i><div>Import erfolgreich: ${added} neue, ${updated} aktualisierte Positionen. Aktien: ${d.stocks?.length||0}, Cash: ${d.cash||'?'} USD</div></div>`;
+    renderPositionsList();
+  } catch(ex){
+    el.innerHTML = `<div class="alert err"><i class="ti ti-x"></i><div>Import fehlgeschlagen: ${ex.message}<br><small>TWS muss laufen und Proxy aktiv sein (http://localhost:5001)</small></div></div>`;
+  }
+}
+
+// ── Manuelle Position hinzufügen ──────────────────────
+function addManualPosition(){
+  const ticker = document.getElementById('doc-ticker').value.trim().toUpperCase();
+  const type   = document.getElementById('doc-type').value;
+  const strike = parseFloat(document.getElementById('doc-strike').value) || 0;
+  const expiry = document.getElementById('doc-expiry').value;
+  const premium= parseFloat(document.getElementById('doc-premium').value) || 0;
+  const contracts = parseInt(document.getElementById('doc-contracts').value) || 1;
+  const costBasis = parseFloat(document.getElementById('doc-cost-basis').value) || 0;
+  const shares = parseInt(document.getElementById('doc-shares').value) || 0;
+
+  if(!ticker || (!strike && type !== 'STOCK') || !expiry){
+    alert('Bitte Ticker, Strike und Verfallsdatum eingeben.');
+    return;
+  }
+
+  window.odPositions.push({
+    id: Date.now(),
+    ticker, type, strike, expiry, premium, contracts,
+    costBasis, shares,
+    source: 'manual',
+    addedAt: new Date().toISOString()
+  });
+  saveODPositions();
+  document.getElementById('add-position-form').style.display = 'none';
+  renderPositionsList();
+}
+
+// ── Positions-Liste rendern ───────────────────────────
+function renderPositionsList(){
+  const el = document.getElementById('positions-list');
+  if(window.odPositions.length === 0){
+    el.innerHTML = '<div class="alert info"><i class="ti ti-info-circle"></i><div>Keine Positionen. Importiere von IBKR oder füge manuell hinzu.</div></div>';
+    return;
+  }
+
+  // Sort: options by DTE (soonest first), then stocks
+  const sorted = [...window.odPositions].sort((a,b) => {
+    if(a.type === 'STOCK' && b.type !== 'STOCK') return 1;
+    if(a.type !== 'STOCK' && b.type === 'STOCK') return -1;
+    return new Date(a.expiry) - new Date(b.expiry);
+  });
+
+  const now = new Date();
+  let html = `
+  <div style="overflow-x:auto">
+  <table style="width:100%;font-size:13px;border-collapse:collapse">
+  <thead>
+    <tr style="border-bottom:1.5px solid var(--border2);color:var(--text2)">
+      <th style="padding:8px;text-align:left">Ticker</th>
+      <th style="padding:8px;text-align:left">Typ</th>
+      <th style="padding:8px;text-align:right">Strike</th>
+      <th style="padding:8px;text-align:left">Verfall</th>
+      <th style="padding:8px;text-align:right">DTE</th>
+      <th style="padding:8px;text-align:right">Prämie</th>
+      <th style="padding:8px;text-align:right">Kontr.</th>
+      <th style="padding:8px;text-align:center">Quelle</th>
+      <th style="padding:8px;text-align:center">Aktion</th>
+    </tr>
+  </thead>
+  <tbody>`;
+
+  sorted.forEach((p, i) => {
+    const dte = p.expiry ? Math.max(0, Math.round((new Date(p.expiry)-now)/86400000)) : '—';
+    const dteColor = dte <= 7 ? 'var(--red)' : dte <= 21 ? 'var(--amber)' : 'var(--green)';
+    const typeLabel = {CSP:'📉 CSP', CC:'📈 CC', STRANGLE:'🔀 Strangle', IRON_CONDOR:'🦅 Iron Condor', STOCK:'🏦 Aktie'}[p.type] || p.type;
+    const srcBadge = p.source === 'ibkr'
+      ? '<span style="background:#1a3a5c;color:#6bb3f0;padding:2px 6px;border-radius:4px;font-size:10px">IBKR</span>'
+      : '<span style="background:var(--bg3);color:var(--text2);padding:2px 6px;border-radius:4px;font-size:10px">Manuell</span>';
+
+    html += `
+    <tr style="border-bottom:0.5px solid var(--border);cursor:pointer" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+      <td style="padding:8px;font-weight:600">${p.ticker}</td>
+      <td style="padding:8px">${typeLabel}</td>
+      <td style="padding:8px;text-align:right">${p.type !== 'STOCK' ? '$'+p.strike : (p.shares||0)+' Aktien'}</td>
+      <td style="padding:8px">${p.expiry || '—'}</td>
+      <td style="padding:8px;text-align:right;color:${dteColor};font-weight:600">${dte}d</td>
+      <td style="padding:8px;text-align:right">${p.premium ? '$'+p.premium.toFixed(2) : '—'}</td>
+      <td style="padding:8px;text-align:right">${p.contracts || (p.shares ? p.shares+' Aktien' : '—')}</td>
+      <td style="padding:8px;text-align:center">${srcBadge}</td>
+      <td style="padding:8px;text-align:center">
+        <button class="btn xs primary" onclick="analyzePosition(${i})">⚕️ Analyse</button>
+        <button class="btn xs" onclick="removePosition(${i})" style="margin-left:4px">🗑</button>
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+
+  // Summary stats
+  const optCount = window.odPositions.filter(p => p.type !== 'STOCK').length;
+  const stockCount = window.odPositions.filter(p => p.type === 'STOCK').length;
+  const urgentCount = sorted.filter(p => {
+    const dte = p.expiry ? Math.max(0, Math.round((new Date(p.expiry)-now)/86400000)) : 999;
+    return dte <= 7 && p.type !== 'STOCK';
+  }).length;
+
+  html = `<div style="display:flex;gap:1rem;margin-bottom:.75rem;flex-wrap:wrap">
+    <div class="card card-sm" style="padding:.5rem 1rem;flex:1;min-width:120px">
+      <div style="font-size:11px;color:var(--text2)">Optionen</div>
+      <div style="font-size:1.4rem;font-weight:700">${optCount}</div>
+    </div>
+    <div class="card card-sm" style="padding:.5rem 1rem;flex:1;min-width:120px">
+      <div style="font-size:11px;color:var(--text2)">Aktien</div>
+      <div style="font-size:1.4rem;font-weight:700">${stockCount}</div>
+    </div>
+    <div class="card card-sm" style="padding:.5rem 1rem;flex:1;min-width:120px;border:1px solid ${urgentCount>0?'var(--red)':'var(--border)'}">
+      <div style="font-size:11px;color:var(--text2)">Dringend (≤7 DTE)</div>
+      <div style="font-size:1.4rem;font-weight:700;color:${urgentCount>0?'var(--red)':'inherit'}">${urgentCount}</div>
+    </div>
+  </div>` + html;
+
+  el.innerHTML = html;
+}
+
+function removePosition(idx){
+  if(!confirm('Position entfernen?')) return;
+  const sorted = [...window.odPositions].sort((a,b) => {
+    const now = new Date();
+    if(a.type === 'STOCK' && b.type !== 'STOCK') return 1;
+    if(a.type !== 'STOCK' && b.type === 'STOCK') return -1;
+    return new Date(a.expiry) - new Date(b.expiry);
+  });
+  const id = sorted[idx].id;
+  window.odPositions = window.odPositions.filter(p => p.id !== id);
+  saveODPositions();
+  renderPositionsList();
+}
+
+// ── Alle Positionen analysieren ───────────────────────
+async function analyzeAllPositions(){
+  const pu = (document.getElementById('proxy-url')?.value || 'http://localhost:5001').replace(/\/$/,'');
+  // Fetch current prices for all tickers
+  const tickers = [...new Set(window.odPositions.map(p => p.ticker))];
+  const prices = {};
+  for(const ticker of tickers){
+    try{
+      const r = await fetch(`${pu}/quote/${ticker}`, {mode:'cors', headers:{'ngrok-skip-browser-warning':'true'}, signal:AbortSignal.timeout(10000)});
+      const d = await r.json();
+      if(d.price > 0) prices[ticker] = d.price;
+    } catch(e){ /* use stored price */ }
+  }
+  // Analyze each position and re-render with status
+  window.odCurrentPrices = prices;
+  renderPositionsWithDiagnosis(prices);
+}
+
+function renderPositionsWithDiagnosis(prices){
+  const el = document.getElementById('positions-list');
+  const now = new Date();
+
+  const sorted = [...window.odPositions].sort((a,b) => {
+    if(a.type === 'STOCK' && b.type !== 'STOCK') return 1;
+    if(a.type !== 'STOCK' && b.type === 'STOCK') return -1;
+    return new Date(a.expiry) - new Date(b.expiry);
+  });
+
+  let html = '<div style="display:flex;flex-direction:column;gap:.75rem">';
+
+  sorted.forEach((p, i) => {
+    const currentPrice = prices[p.ticker] || p.lastPrice || 0;
+    const dte = p.expiry ? Math.max(0, Math.round((new Date(p.expiry)-now)/86400000)) : 999;
+    const diag = diagnosePosition(p, currentPrice, dte);
+
+    const statusColor = {OK:'var(--green)', WATCH:'var(--amber)', ROLLEN:'var(--red)', DRINGEND:'#c0392b'}[diag.status] || 'var(--text2)';
+    const statusBg = {OK:'var(--green-bg)', WATCH:'var(--amber-bg)', ROLLEN:'var(--red-bg)', DRINGEND:'var(--red-bg)'}[diag.status] || 'var(--bg3)';
+
+    html += `
+    <div class="card card-sm" style="border-left:3px solid ${statusColor}">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+        <div>
+          <span style="font-weight:700;font-size:1rem">${p.ticker}</span>
+          <span style="margin-left:.5rem;color:var(--text2);font-size:13px">${p.type} ${p.type!=='STOCK'?'$'+p.strike+' · '+p.expiry+' ('+dte+'d)':p.shares+' Aktien'}</span>
+          ${currentPrice > 0 ? `<span style="margin-left:.5rem;color:var(--text2);font-size:12px">Kurs: $${currentPrice.toFixed(2)}</span>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <span style="background:${statusBg};color:${statusColor};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${diag.status}</span>
+          <button class="btn xs primary" onclick="analyzePosition(${i}, ${currentPrice})">⚕️ Details</button>
+        </div>
+      </div>
+      <div style="margin-top:.5rem;font-size:12px;color:var(--text2)">${diag.shortNote}</div>
+    </div>`;
+  });
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// ── Einzel-Diagnose ───────────────────────────────────
+function diagnosePosition(p, currentPrice, dte){
+  if(p.type === 'STOCK'){
+    return {status:'OK', shortNote:`${p.shares} Aktien · Einstand: $${p.costBasis||'?'} · Aktuell: $${currentPrice.toFixed(2)}`};
+  }
+
+  const strike = p.strike || 0;
+  const premium = p.premium || 0;
+  const maxProfit = premium * (p.contracts||1) * 100;
+  let status, shortNote;
+
+  if(p.type === 'CSP'){
+    const itm = currentPrice < strike;
+    const itmPct = itm ? ((strike - currentPrice)/strike*100) : 0;
+    const profitPct = currentPrice > 0 ? Math.min(100, (premium / Math.max(0.01, Math.abs(currentPrice - strike + premium))) * 100) : 0;
+
+    if(itmPct > 15) status = 'DRINGEND';
+    else if(itm && itmPct > 5) status = 'ROLLEN';
+    else if(itm || dte <= 7) status = 'WATCH';
+    else if(dte <= 21) status = 'WATCH';
+    else status = 'OK';
+
+    shortNote = itm
+      ? `⚠️ ITM ${itmPct.toFixed(1)}% · Kurs $${currentPrice.toFixed(2)} unter Strike $${strike} · ${dte}d verbleibend`
+      : `✓ OTM · Kurs $${currentPrice.toFixed(2)} · ${dte}d · Max Gewinn: $${maxProfit.toFixed(0)}`;
+
+  } else if(p.type === 'CC'){
+    const itm = currentPrice > strike;
+    const itmPct = itm ? ((currentPrice - strike)/strike*100) : 0;
+    const gainPerShare = p.costBasis > 0 ? currentPrice - p.costBasis : 0;
+    const taxNote = gainPerShare > 0 && p.costBasis > 0 ? ` · ⚠️ Steuer: ${(gainPerShare*(p.shares||100)).toFixed(0)} USD Gewinn bei Ausübung` : '';
+
+    if(itmPct > 10) status = 'ROLLEN';
+    else if(itm) status = 'WATCH';
+    else if(dte <= 7) status = 'WATCH';
+    else status = 'OK';
+
+    shortNote = itm
+      ? `⚠️ ITM ${itmPct.toFixed(1)}% · Kurs $${currentPrice.toFixed(2)} über Strike $${strike}${taxNote}`
+      : `✓ OTM · Kurs $${currentPrice.toFixed(2)} · ${dte}d${taxNote}`;
+  } else {
+    status = dte <= 14 ? 'WATCH' : 'OK';
+    shortNote = `${p.type} · ${dte}d verbleibend`;
+  }
+
+  return {status, shortNote};
+}
+
+// ── Detaillierte Einzel-Analyse ───────────────────────
+async function analyzePosition(idx, currentPrice){
+  const sorted = [...window.odPositions].sort((a,b) => {
+    const now = new Date();
+    if(a.type === 'STOCK' && b.type !== 'STOCK') return 1;
+    if(a.type !== 'STOCK' && b.type === 'STOCK') return -1;
+    return new Date(a.expiry) - new Date(b.expiry);
+  });
+  const p = sorted[idx];
+  const pu = (document.getElementById('proxy-url')?.value || 'http://localhost:5001').replace(/\/$/,'');
+  const panel = document.getElementById('diagnosis-panel');
+  panel.style.display = 'block';
+  panel.innerHTML = '<div class="card"><div class="alert info"><i class="ti ti-loader ti-spin"></i><div>Analysiere ' + p.ticker + '...</div></div></div>';
+  panel.scrollIntoView({behavior:'smooth'});
+
+  // Get current price if not provided
+  let price = currentPrice || 0;
+  if(!price || price <= 0){
+    try{
+      const r = await fetch(`${pu}/quote/${p.ticker}`, {mode:'cors', headers:{'ngrok-skip-browser-warning':'true'}, signal:AbortSignal.timeout(10000)});
+      const d = await r.json();
+      price = d.price || 0;
+    } catch(e){}
+  }
+
+  const now = new Date();
+  const dte = p.expiry ? Math.max(0, Math.round((new Date(p.expiry)-now)/86400000)) : 0;
+  const diag = diagnosePosition(p, price, dte);
+
+  // Ludwig Roll-Empfehlung
+  const ludwigRec = getLudwigRecommendation(p, price, dte);
+  // Tax analysis for CC
+  const taxAnalysis = getTaxAnalysis(p, price);
+  // AI Analysis
+  const aiAnalysis = await getAIAnalysis(p, price, dte, diag, ludwigRec);
+
+  const statusColor = {OK:'var(--green)', WATCH:'var(--amber)', ROLLEN:'var(--red)', DRINGEND:'#c0392b'}[diag.status] || 'var(--text2)';
+
+  panel.innerHTML = `
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <h3 style="margin:0">⚕️ Diagnose: ${p.ticker} ${p.type} ${p.type!=='STOCK'?'$'+p.strike:''}
+        <span style="color:${statusColor};margin-left:.5rem">${diag.status}</span>
+      </h3>
+      <button class="btn xs" onclick="document.getElementById('diagnosis-panel').style.display='none'">✕</button>
+    </div>
+
+    <!-- Position Details -->
+    <div class="g2" style="margin-bottom:1rem">
+      <div style="background:var(--bg3);border-radius:var(--r);padding:.75rem">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:.5rem">POSITION</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.25rem;font-size:13px">
+          <span style="color:var(--text2)">Typ:</span><span>${p.type}</span>
+          <span style="color:var(--text2)">Strike:</span><span>$${p.strike||'—'}</span>
+          <span style="color:var(--text2)">Verfall:</span><span>${p.expiry||'—'} (${dte}d)</span>
+          <span style="color:var(--text2)">Prämie:</span><span>$${p.premium||'—'}</span>
+          <span style="color:var(--text2)">Kontrakte:</span><span>${p.contracts||1}</span>
+          <span style="color:var(--text2)">Akt. Kurs:</span><span style="font-weight:600">$${price>0?price.toFixed(2):'—'}</span>
+        </div>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:.75rem">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:.5rem">LAGE</div>
+        <div style="font-size:13px">${diag.shortNote}</div>
+      </div>
+    </div>
+
+    <!-- Ludwig Empfehlung -->
+    <div style="margin-bottom:1rem">
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:.4rem">📚 LUDWIG-SYSTEMATIK</div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:.75rem;font-size:13px">
+        ${ludwigRec}
+      </div>
+    </div>
+
+    ${taxAnalysis ? `
+    <!-- Steuerhinweis -->
+    <div style="margin-bottom:1rem">
+      <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:.4rem">⚠️ STEUERHINWEIS (CC-AUSÜBUNG)</div>
+      <div style="background:var(--amber-bg);border:1px solid var(--amber);border-radius:var(--r);padding:.75rem;font-size:13px">
+        ${taxAnalysis}
+      </div>
+    </div>` : ''}
+
+    <!-- AI Analyse -->
+    <div>
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:.4rem">🤖 KI-ANALYSE (Claude)</div>
+      <div id="ai-analysis-content" style="background:var(--bg3);border-radius:var(--r);padding:.75rem;font-size:13px">
+        ${aiAnalysis}
+      </div>
+    </div>
+
+    <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn primary" onclick="addToJournalFromDiag(${JSON.stringify(p).replace(/"/g,'&quot;')})"><i class="ti ti-notebook"></i>Ins Journal</button>
+      <button class="btn" onclick="openChainForPosition('${p.ticker}')"><i class="ti ti-table"></i>Optionskette öffnen</button>
+    </div>
+  </div>`;
+}
+
+// ── Ludwig Empfehlung ─────────────────────────────────
+function getLudwigRecommendation(p, price, dte){
+  if(p.type === 'STOCK'){
+    const gain = p.costBasis > 0 ? ((price - p.costBasis)/p.costBasis*100).toFixed(1) : '?';
+    return `Aktienposition · Gewinn: ${gain}% · Keine Roll-Aktion nötig.`;
+  }
+
+  const strike = p.strike || 0;
+  const premium = p.premium || 0;
+  const contracts = p.contracts || 1;
+
+  if(p.type === 'CSP'){
+    const itm = price < strike && price > 0;
+    const itmPct = itm ? ((strike - price)/strike*100) : 0;
+
+    if(!itm && dte > 21){
+      return `✅ <strong>Halten</strong> — Position ist OTM (Kurs $${price.toFixed(2)} > Strike $${strike}), ${dte} DTE. Kein Handlungsbedarf nach Ludwig Kap. 3.`;
+    }
+    if(!itm && dte <= 21 && dte > 7){
+      return `🔄 <strong>Rollen prüfen (Ludwig Stufe 1)</strong> — 21 DTE erreicht.<br>
+        → Strike leicht senken (ca. $${(strike * 0.97).toFixed(1)}), Laufzeit auf 30–45 DTE verlängern.<br>
+        → Nettoprämie: mindestens $${(premium * 0.3).toFixed(2)} anstreben.`;
+    }
+    if(!itm && dte <= 7){
+      return `⚡ <strong>Rollen jetzt (Ludwig Stufe 1)</strong> — Weniger als 7 DTE.<br>
+        → Gleichen oder leicht tieferen Strike, 30 DTE Ziel.<br>
+        → Prämie: $${(premium * 0.5).toFixed(2)}–$${(premium * 0.8).toFixed(2)} realistisch.`;
+    }
+    if(itm && itmPct < 5){
+      return `🟡 <strong>Rollen (Ludwig Stufe 2)</strong> — Leicht ITM (${itmPct.toFixed(1)}%).<br>
+        → Option gleichen Strike, 45 DTE verlängern für Zeitwert-Rückgewinnung.<br>
+        → Nettoprämie ≥ $${(premium * 0.2).toFixed(2)} anstreben.`;
+    }
+    if(itm && itmPct >= 5 && itmPct < 15){
+      return `🔴 <strong>Rollen Stufe 2–3</strong> — ${itmPct.toFixed(1)}% ITM.<br>
+        → Stufe 2: Gleicher Strike, 60 DTE — Prämie ca. $${(premium * 0.4).toFixed(2)}<br>
+        → Stufe 3: 2× Kontrakte, Strike $${(strike * 0.92).toFixed(1)}, 45 DTE — nur wenn Aktie fundamental OK.<br>
+        → Alternativ: Zuteilung akzeptieren und Covered Calls schreiben.`;
+    }
+    return `🚨 <strong>DRINGEND — ${itmPct.toFixed(1)}% ITM</strong><br>
+      → Sofort schließen oder Stufe-3-Roll: 2× Kontrakte, Strike $${(strike * 0.88).toFixed(1)}, 60 DTE.<br>
+      → Zuteilung einkalkulieren: Kapitalbedarf $${(strike * 100 * contracts).toFixed(0)}.`;
+  }
+
+  if(p.type === 'CC'){
+    const itm = price > strike && price > 0;
+    const itmPct = itm ? ((price - strike)/strike*100) : 0;
+
+    if(!itm){
+      return `✅ <strong>Halten</strong> — OTM (Kurs $${price.toFixed(2)} < Strike $${strike}). Zeitwertverlust läuft. ${dte} DTE.`;
+    }
+    if(itmPct < 5){
+      return `🟡 <strong>Rollen erwägen</strong> — ${itmPct.toFixed(1)}% ITM.<br>
+        → Strike anheben auf $${(strike * 1.05).toFixed(1)}, Laufzeit 30–45 DTE.<br>
+        → Steuerfolgen bei Ausübung beachten (siehe Steuerhinweis).`;
+    }
+    return `🔴 <strong>Rollen (Defensiv)</strong> — ${itmPct.toFixed(1)}% ITM.<br>
+      → Strike $${(price * 1.03).toFixed(1)} (3% über Kurs), 45 DTE.<br>
+      → Vor Ausübung unbedingt Steuerfolgen prüfen!`;
+  }
+
+  return `Kein spezifischer Ludwig-Hinweis für ${p.type}. Manuelle Prüfung empfohlen.`;
+}
+
+// ── Steueranalyse CC ──────────────────────────────────
+function getTaxAnalysis(p, price){
+  if(p.type !== 'CC' || !p.costBasis || !p.shares) return null;
+
+  const costBasis = parseFloat(p.costBasis);
+  const shares = parseInt(p.shares);
+  const strike = p.strike || 0;
+  const premium = p.premium || 0;
+  const currentGain = (price - costBasis) * shares;
+  const assignmentGain = (strike + premium - costBasis) * shares;
+  const abgeltungsteuer = assignmentGain * 0.25; // 25% Abgeltungsteuer + Soli
+  const soli = abgeltungsteuer * 0.055;
+  const totalTax = abgeltungsteuer + soli;
+
+  return `
+  <strong>Einstandskurs:</strong> $${costBasis.toFixed(2)} · <strong>Aktuelle Kurs:</strong> $${price.toFixed(2)}<br>
+  <strong>Aktueller Buchgewinn:</strong> $${currentGain.toFixed(0)} (${((price-costBasis)/costBasis*100).toFixed(1)}%)<br>
+  <strong>Gewinn bei Ausübung zu Strike $${strike}:</strong> $${assignmentGain.toFixed(0)}<br>
+  <strong>Steuerbelastung (ca.):</strong> ~$${totalTax.toFixed(0)} (25% KESt + 5.5% Soli)<br>
+  <strong>Netto nach Steuer:</strong> $${(assignmentGain - totalTax).toFixed(0)}<br>
+  <em style="color:var(--amber)">→ Vor Ausübung prüfen: Ist Rollen steuerlich günstiger?</em>`;
+}
+
+// ── AI-Analyse via Claude ─────────────────────────────
+async function getAIAnalysis(p, price, dte, diag, ludwigRec){
+  try{
+    const prompt = `Du bist ein erfahrener Options-Trader. Analysiere diese Position knapp auf Deutsch (max 120 Wörter):
+
+Ticker: ${p.ticker} | Typ: ${p.type} | Strike: $${p.strike} | DTE: ${dte} | Prämie: $${p.premium}
+Aktueller Kurs: $${price} | Status: ${diag.status} | Kontrakte: ${p.contracts||1}
+${p.costBasis ? 'Einstandskurs Aktie: $'+p.costBasis+' ('+p.shares+' Aktien)' : ''}
+
+Ludwig-Einschätzung: ${ludwigRec.replace(/<[^>]*>/g,'').substring(0,200)}
+
+Gib eine präzise Einschätzung: Hauptrisiko, konkrete Empfehlung (Halten/Rollen/Schließen), und falls Rollen: welcher Strike + welche Laufzeit.`;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 200,
+        messages: [{role:'user', content: prompt}]
+      })
+    });
+    const d = await response.json();
+    return d.content?.[0]?.text || 'KI-Analyse nicht verfügbar.';
+  } catch(e){
+    return 'KI-Analyse nicht verfügbar (API-Verbindung prüfen).';
+  }
+}
+
+// ── Hilfsfunktionen ───────────────────────────────────
+function openChainForPosition(ticker){
+  document.getElementById('ch-ticker').value = ticker;
+  document.getElementById('ch-src').value = 'ibkr';
+  showTab('chain');
+  loadExpirations();
+}
+
+function analyzeAllPositions(){
+  const pu = (document.getElementById('proxy-url')?.value || 'http://localhost:5001').replace(/\/$/,'');
+  const tickers = [...new Set(window.odPositions.map(p => p.ticker))];
+  const prices = {};
+  (async()=>{
+    for(const ticker of tickers){
+      try{
+        const r = await fetch(`${pu}/quote/${ticker}`, {mode:'cors', headers:{'ngrok-skip-browser-warning':'true'}, signal:AbortSignal.timeout(8000)});
+        const d = await r.json();
+        if(d.price > 0) prices[ticker] = d.price;
+      } catch(e){}
+    }
+    window.odCurrentPrices = prices;
+    renderPositionsWithDiagnosis(prices);
+  })();
+}
+
+// Init on tab open
+document.addEventListener('DOMContentLoaded', ()=>{
+  renderPositionsList();
+});
+
+
 </script>
 </body>
 </html>
