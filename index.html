@@ -2816,6 +2816,2884 @@ function getTaxAnalysis(p, price){
 // ── AI-Analyse via Claude ─────────────────────────────
 async function getAIAnalysis(p, price, dte, diag, ludwigRec){
   try{
+    const pu=(document.getElementById('proxy-url')?.value||'http://localhost:5001').replace(/\/$/,'');
+    const prompt = `Du bist ein erfahrener Options-Trader (Wheel-Strategie nach Eric Ludwig). Analysiere diese Position knapp auf Deutsch (max 120 Wörter):
+
+Ticker: ${p.ticker} | Typ: ${p.type} | Strike: $${p.strike} | DTE: ${dte} | Prämie: $${p.premium}
+Aktueller Kurs: $${price>0?price.toFixed(2):'unbekannt'} | Status: ${diag.status} | Kontrakte: ${p.contracts||1}
+${p.costBasis ? 'Einstandskurs Aktie: $'+p.costBasis+' ('+p.shares+' Aktien)' : ''}
+Unrealisiertes P&L: $${p.unrealizedPnL||0}
+
+Ludwig-Einschätzung: ${ludwigRec.replace(/<[^>]*>/g,'').substring(0,200)}
+
+Gib eine präzise Einschätzung: Hauptrisiko, konkrete Empfehlung (Halten/Rollen/Schließen), falls Rollen: welcher Strike + welche Laufzeit.`;
+
+    const response = await fetch(`${pu}/ai`, {
+      method: 'POST',
+      mode: 'cors',
+      headers: {'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},
+      body: JSON.stringify({prompt}),
+      signal: AbortSignal.timeout(20000)
+    });
+    const d = await response.json();
+    return d.text || 'KI-Analyse nicht verfügbar.';
+  } catch(e){
+    return `KI-Analyse nicht verfügbar: ${e.message}`;
+  }
+}
+
+// ── Hilfsfunktionen ───────────────────────────────────
+function openChainForPosition(ticker){
+  document.getElementById('ch-ticker').value = ticker;
+  document.getElementById('ch-src').value = 'ibkr';
+  showTab('chain');
+  loadExpirations();
+}
+
+function analyzeAllPositions(){
+  const pu = (document.getElementById('proxy-url')?.value || 'http://localhost:5001').replace(/\/$/,'');
+  const tickers = [...new Set(window.odPositions.map(p => p.ticker))];
+  const prices = {};
+  (async()=>{
+    for(const ticker of tickers){
+      try{
+        const r = await fetch(`${pu}/quote/${ticker}`, {mode:'cors', headers:{'ngrok-skip-browser-warning':'true'}, signal:AbortSignal.timeout(8000)});
+        const d = await r.json();
+        if(d.price > 0) prices[ticker] = d.price;
+      } catch(e){}
+    }
+    window.odCurrentPrices = prices;
+    renderPositionsWithDiagnosis(prices);
+  })();
+}
+
+// Init on tab open
+document.addEventListener('DOMContentLoaded', ()=>{
+  renderPositionsList();
+});
+
+
+</script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1D9E75">
+<title>PremiumOptions — Ludwig-Strategie</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+:root {
+  --green:#1D9E75; --green-light:#EAF3DE; --green-dark:#0F6E56;
+  --red:#E24B4A; --red-light:#FCEBEB;
+  --amber:#BA7517; --amber-light:#FAEEDA;
+  --blue:#185FA5; --blue-light:#E6F1FB;
+  --teal-light:#E1F5EE;
+  --bg:#F5F5F2; --bg2:#FFFFFF; --bg3:#EEEDE8;
+  --text:#1a1a18; --text2:#666660; --text3:#999992;
+  --border:rgba(0,0,0,0.12); --border2:rgba(0,0,0,0.22);
+  --r:8px; --rl:12px;
+  --shadow:0 1px 3px rgba(0,0,0,0.07);
+}
+@media(prefers-color-scheme:dark){
+  :root{
+    --bg:#1c1c1a; --bg2:#252523; --bg3:#141412;
+    --text:#e8e8e4; --text2:#9a9a94; --text3:#666660;
+    --border:rgba(255,255,255,0.1); --border2:rgba(255,255,255,0.2);
+    --green-light:#0a2e1f; --red-light:#2e0f0f; --amber-light:#2e1f00;
+    --blue-light:#0a1e35; --teal-light:#051a10;
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:var(--text);background:var(--bg);min-height:100vh}
+/* ── Layout ── */
+.app{display:flex;flex-direction:column;min-height:100vh}
+.topbar{background:var(--bg2);border-bottom:.5px solid var(--border);padding:0 1rem;display:flex;align-items:center;gap:0;position:sticky;top:0;z-index:200;box-shadow:var(--shadow)}
+.logo{font-size:15px;font-weight:600;padding:0 1rem 0 0;margin-right:.75rem;border-right:.5px solid var(--border);height:46px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.logo-accent{color:var(--green)}
+.nav-tab{height:46px;padding:0 13px;border:none;background:none;color:var(--text2);font-size:13px;cursor:pointer;display:flex;align-items:center;gap:4px;white-space:nowrap;position:relative;font-family:inherit}
+.nav-tab.active{color:var(--text);font-weight:500}
+.nav-tab.active::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--green)}
+.nav-tab i{font-size:15px}
+.content{padding:1rem;flex:1}
+.hidden{display:none!important}
+/* ── Cards ── */
+.card{background:var(--bg2);border:.5px solid var(--border);border-radius:var(--rl);padding:1rem 1.25rem;margin-bottom:.875rem}
+.card-sm{padding:.75rem 1rem}
+.card-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem;display:flex;align-items:center;gap:5px}
+.card-title i{font-size:15px;color:var(--green)}
+/* ── Grid ── */
+.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem}
+.g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem}
+/* ── Forms ── */
+.frow{margin-bottom:.65rem}
+label{font-size:12px;color:var(--text2);display:block;margin-bottom:3px;font-weight:500}
+input[type=text],input[type=number],input[type=date],select,textarea{
+  width:100%;padding:7px 10px;font-size:13px;border:.5px solid var(--border2);
+  border-radius:var(--r);background:var(--bg2);color:var(--text);font-family:inherit;
+  transition:border-color .15s}
+input:focus,select:focus{outline:none;border-color:var(--green)}
+input[type=range]{width:100%;accent-color:var(--green);height:4px}
+input[type=checkbox]{accent-color:var(--green);width:14px;height:14px}
+/* ── Buttons ── */
+.btn{padding:7px 14px;border:.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:5px;transition:background .15s}
+.btn:hover{background:var(--bg3)}
+.btn.primary{background:var(--green);color:#fff;border-color:var(--green)}
+.btn.primary:hover{background:var(--green-dark)}
+.btn.sm{padding:4px 10px;font-size:12px}
+.btn.xs{padding:2px 7px;font-size:11px}
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
+.b-green{background:var(--green-light);color:#3B6D11}
+.b-red{background:var(--red-light);color:#A32D2D}
+.b-amber{background:var(--amber-light);color:#854F0B}
+.b-blue{background:var(--blue-light);color:#185FA5}
+.b-teal{background:var(--teal-light);color:#0F6E56}
+.b-gray{background:var(--bg3);color:var(--text2)}
+/* ── Metrics ── */
+.metric{background:var(--bg3);border-radius:var(--r);padding:.65rem .9rem}
+.metric-label{font-size:11px;color:var(--text2);margin-bottom:3px;font-weight:500}
+.metric-value{font-size:19px;font-weight:600}
+/* ── Colors ── */
+.pos{color:var(--green)} .neg{color:var(--red)} .warn{color:var(--amber)}
+/* ── Tables ── */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;color:var(--text2);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding:5px 7px;border-bottom:.5px solid var(--border);white-space:nowrap}
+th.r{text-align:right}
+td{padding:5px 7px;border-bottom:.5px solid var(--border);vertical-align:middle}
+td.r{text-align:right}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg3)}
+/* ── Alerts ── */
+.alert{padding:.65rem .9rem;border-radius:var(--r);font-size:12px;margin-bottom:.65rem;display:flex;gap:7px;align-items:flex-start;line-height:1.5}
+.alert i{font-size:15px;flex-shrink:0;margin-top:1px}
+.alert.info{background:var(--blue-light);color:var(--blue);border:.5px solid #B5D4F4}
+.alert.ok{background:var(--green-light);color:#3B6D11;border:.5px solid #C0DD97}
+.alert.warn{background:var(--amber-light);color:#854F0B;border:.5px solid #FAC775}
+.alert.err{background:var(--red-light);color:#A32D2D;border:.5px solid #F7C1C1}
+/* ── Result rows ── */
+.rrow{display:flex;justify-content:space-between;align-items:center;padding:.35rem 0;border-bottom:.5px solid var(--border);font-size:13px}
+.rrow:last-child{border-bottom:none}
+.rrow-label{color:var(--text2)}
+.rrow-val{font-weight:500}
+/* ── Misc ── */
+.divider{height:.5px;background:var(--border);margin:.65rem 0}
+.tag{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;background:var(--bg3);border:.5px solid var(--border);border-radius:20px;font-size:11px;color:var(--text2);margin:2px}
+.score-bar{height:5px;border-radius:3px;background:var(--bg3);overflow:hidden;margin-top:3px}
+.score-fill{height:100%;border-radius:3px;background:var(--green)}
+.spinner{display:inline-block;width:13px;height:13px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:3px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.journal-entry{padding:.75rem 1rem;border-left:3px solid var(--green);background:var(--bg3);border-radius:0 var(--r) var(--r) 0;margin-bottom:.5rem}
+.je-red{border-left-color:var(--red)}
+.je-amber{border-left-color:var(--amber)}
+.checklist-item{display:flex;align-items:flex-start;gap:.5rem;padding:.3rem 0;font-size:12px;border-bottom:.5px solid var(--border)}
+.checklist-item:last-child{border-bottom:none}
+.ci-ok{color:var(--green);font-size:15px;flex-shrink:0}
+.ci-fail{color:var(--red);font-size:15px;flex-shrink:0}
+.ci-warn{color:var(--amber);font-size:15px;flex-shrink:0}
+.roll-box{background:var(--bg3);border-radius:var(--r);padding:.75rem;margin-top:.5rem}
+.roll-row{display:flex;justify-content:space-between;font-size:12px;padding:2px 0}
+.roll-sum{font-weight:600;border-top:.5px solid var(--border);margin-top:4px;padding-top:4px}
+.expiry-chip{display:inline-flex;padding:4px 10px;background:var(--bg3);border:.5px solid var(--border);border-radius:6px;font-size:12px;cursor:pointer;margin:2px;transition:background .12s}
+.expiry-chip.sel,.expiry-chip:hover{background:var(--green);color:#fff;border-color:var(--green)}
+.chain-wrap{overflow-x:auto;max-height:400px;overflow-y:auto}
+.delta-badge{display:inline-block;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:500}
+.atm-row td{background:var(--teal-light)!important}
+.ludwig-row td{background:var(--green-light)!important}
+.range-row td{background:var(--blue-light)!important}
+th.puts-h{background:var(--amber-light);color:#854F0B}
+th.calls-h{background:var(--green-light);color:#3B6D11}
+td.strike-col{background:var(--bg3)!important;font-weight:600;text-align:center}
+/* ── Dividend UI ── */
+.div-score{display:flex;align-items:center;gap:.5rem}
+.div-score-bar{flex:1;height:6px;border-radius:3px;background:var(--bg3);overflow:hidden}
+.div-score-fill{height:100%;border-radius:3px}
+.div-section{background:var(--bg3);border-radius:var(--r);padding:.65rem .85rem;margin-top:.4rem}
+.div-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--text2);margin-bottom:.35rem}
+/* ── Proxy code ── */
+.proxy-code{background:var(--bg3);border:.5px solid var(--border);border-radius:var(--r);padding:.75rem;font-family:monospace;font-size:11px;line-height:1.65;overflow-x:auto;white-space:pre;margin-top:.4rem}
+/* ── Screener result row ── */
+.sr{padding:.55rem .75rem;border-bottom:.5px solid var(--border);display:flex;align-items:center;gap:.75rem;cursor:pointer;transition:background .12s}
+.sr:hover,.sr.active{background:var(--bg3)}
+.sr:last-child{border-bottom:none}
+.sr-ticker{font-weight:600;min-width:52px;font-size:13px}
+.sr-bar{flex:1;height:4px;border-radius:2px;background:var(--bg3)}
+.sr-fill{height:100%;border-radius:2px;background:var(--green)}
+/* ── Macro ── */
+.macro-card{background:var(--bg3);border-radius:var(--r);padding:.65rem .85rem}
+.macro-label{font-size:11px;color:var(--text2);margin-bottom:2px}
+.macro-val{font-size:17px;font-weight:600}
+.macro-chg{font-size:11px;margin-top:2px}
+/* ── Source tab ── */
+.src-tab{padding:4px 12px;border:.5px solid var(--border);border-radius:6px;background:var(--bg2);font-size:12px;cursor:pointer;color:var(--text2);transition:background .12s}
+.src-tab.active{background:var(--green);color:#fff;border-color:var(--green)}
+</style>
+</head>
+<body>
+<div class="app">
+<!-- ═══ TOPBAR ═══ -->
+<div class="topbar">
+  <div class="logo"><i class="ti ti-chart-candle"></i>Premium<span class="logo-accent">Options</span></div>
+  <button class="nav-tab active" onclick="showTab('screener')" id="tab-screener"><i class="ti ti-filter"></i>Screener</button>
+  <button class="nav-tab" onclick="showTab('chain')" id="tab-chain"><i class="ti ti-table"></i>Optionskette</button>
+  <button class="nav-tab" onclick="showTab('calculator')" id="tab-calculator"><i class="ti ti-calculator"></i>Rechner</button>
+  <button class="nav-tab" onclick="showTab('rolling')" id="tab-rolling"><i class="ti ti-refresh"></i>Roll-Manager</button>
+  <button class="nav-tab" onclick="showTab('journal')" id="tab-journal"><i class="ti ti-notebook"></i>Journal</button>
+  <button class="nav-tab" onclick="showTab('market')" id="tab-market"><i class="ti ti-world"></i>Markt</button>
+  <button class="nav-tab" onclick="showTab('portfolio')" id="tab-portfolio"><i class="ti ti-stethoscope"></i>Optionen-Doktor</button>
+  <button class="nav-tab" onclick="showTab('settings')" id="tab-settings"><i class="ti ti-settings"></i></button>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     TAB 1: SCREENER
+═══════════════════════════════════════════ -->
+<div class="content" id="pane-screener">
+<div class="g2">
+<!-- LEFT: Filter panel -->
+<div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-adjustments-horizontal"></i>Ludwig-Kriterien (Kap. 4)</div>
+    <div class="g2">
+      <div class="frow"><label>Kurs min ($)</label><input type="number" id="s-pmin" value="15" oninput="refilterScreener()"></div>
+      <div class="frow"><label>Kurs max ($)</label><input type="number" id="s-pmax" value="80" oninput="refilterScreener()"></div>
+      <div class="frow"><label>KGV max</label><input type="number" id="s-pe" value="25" oninput="refilterScreener()"></div>
+      <div class="frow"><label>IV min (%)</label><input type="number" id="s-ivmin" value="20" oninput="refilterScreener()"></div>
+      <div class="frow"><label>IV max (%)</label><input type="number" id="s-ivmax" value="50" oninput="refilterScreener()"></div>
+      <div class="frow"><label>Payout-Ratio max (%)</label><input type="number" id="s-payout" value="60" oninput="refilterScreener()"></div>
+    </div>
+    <div class="frow">
+      <label>Optionen-Tick max (% vom Kurs)</label>
+      <input type="range" id="s-tick" min="1" max="10" value="5" oninput="document.getElementById('s-tick-v').textContent=this.value+'%'">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2);margin-top:2px"><span>1%</span><span id="s-tick-v" style="font-weight:500;color:var(--green)">5%</span><span>10%</span></div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:.6rem">
+      <label style="width:100%;margin-bottom:0;font-size:12px">Pflichtkriterien:</label>
+      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-rev" checked onchange="refilterScreener()"> Umsatz↑ (10J)</label>
+      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-fcf" checked onchange="refilterScreener()"> FCF positiv</label>
+      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-week" checked onchange="refilterScreener()"> Weeklies</label>
+      <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="checkbox" id="s-buyback" onchange="refilterScreener()"> Rückkäufe</label>
+    </div>
+    <div class="frow">
+      <label>Charttechnik</label>
+      <select id="s-chart" onchange="refilterScreener()">
+        <option value="any">Beliebig</option>
+        <option value="rsi" selected>RSI 30–70 steigend</option>
+        <option value="macd">MACD Kaufsignal</option>
+        <option value="both">RSI + MACD</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- ── DIVIDEND FILTER CARD ── -->
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-coin"></i>Dividenden-Filter (Score-Bonus)</div>
+    <div class="alert info"><i class="ti ti-info-circle"></i><div>Dividenden sind kein K.O.-Kriterium (Ludwig Kap. 4), heben aber den Score. Payout-Ratio ≤60% bleibt Pflicht.</div></div>
+
+    <!-- Dividendenrendite -->
+    <div class="div-section">
+      <div class="div-title">Dividendenrendite</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.4rem">
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="any" checked onchange="refilterScreener()"> Beliebig</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="lt2" onchange="refilterScreener()"> ≤2%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="2to4" onchange="refilterScreener()"> 2–4%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="gt4" onchange="refilterScreener()"> >4%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-yield" value="none" onchange="refilterScreener()"> Keine Div.</label>
+      </div>
+      <div style="font-size:11px;color:var(--text2)">Score-Bonus: 2–4% → +0.5 Pkt · >4% → +0.3 (Vorsicht: hohe Div. ≠ besser)</div>
+    </div>
+
+    <!-- Dividendensicherheit -->
+    <div class="div-section" style="margin-top:.4rem">
+      <div class="div-title">Dividendensicherheit — Kombinierter Score</div>
+      <div class="g3" style="gap:.4rem;margin-bottom:.4rem">
+        <div>
+          <label style="font-size:11px">Payout-Ratio max (%)</label>
+          <input type="number" id="div-payout-max" value="60" style="font-size:12px;padding:5px 8px" oninput="refilterScreener()">
+        </div>
+        <div>
+          <label style="font-size:11px">FCF-Coverage min (×)</label>
+          <input type="number" id="div-fcf-cov" value="1.2" step="0.1" style="font-size:12px;padding:5px 8px" oninput="refilterScreener()">
+        </div>
+        <div>
+          <label style="font-size:11px">Aristocrat-Bonus</label>
+          <select id="div-aristocrat" style="font-size:12px;padding:5px 8px" onchange="refilterScreener()">
+            <option value="any">Beliebig</option>
+            <option value="10">≥10 Jahre</option>
+            <option value="25">Aristocrat (25+)</option>
+            <option value="50">King (50+)</option>
+          </select>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2)">Sicherheits-Score 0–10: Payout (0–4) + FCF-Deckung (0–3) + Streak (0–3)</div>
+    </div>
+
+    <!-- Dividendenwachstum -->
+    <div class="div-section" style="margin-top:.4rem">
+      <div class="div-title">Dividendenwachstum p.a. — Bonus-Faktor</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.3rem">
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="any" checked onchange="refilterScreener()"> Beliebig</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="lt2" onchange="refilterScreener()"> &lt;2%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="2to5" onchange="refilterScreener()"> 2–5%</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="div-growth" value="gt5" onchange="refilterScreener()"> >5%</label>
+      </div>
+      <div style="font-size:11px;color:var(--text2)">Score-Bonus: 2–5% → +0.3 · >5% → +0.6 · Kein Pflichtkriterium</div>
+    </div>
+
+    <!-- Universum & Quelle -->
+    <div class="div-section" style="margin-top:.4rem">
+      <div class="div-title">Aktien-Universum</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.4rem">
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="universe" value="all" checked> S&P500 + DJ30 + Nasdaq100 (~600)</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="universe" value="dj30"> Dow Jones 30</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="universe" value="ndx100"> Nasdaq 100</label>
+        <label style="font-size:12px;display:flex;gap:4px;align-items:center"><input type="radio" name="universe" value="curated"> 50er Kurzliste (kein API)</label>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:160px">
+          <label style="font-size:11px">Finnhub API-Key (für Live-Daten)</label>
+          <input type="password" id="fh-key" placeholder="Aus Einstellungen oder hier eingeben" style="font-size:12px;padding:5px 8px">
+        </div>
+        <div style="font-size:11px;color:var(--text2);align-self:flex-end;padding-bottom:2px">
+          <span id="fh-key-status"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div id="screener-progress" style="display:none;margin-top:.65rem">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:.3rem">
+        <span id="progress-msg" style="color:var(--text2)">Starte...</span>
+        <span id="progress-pct" style="font-weight:500;color:var(--green)">0%</span>
+      </div>
+      <div style="height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin-bottom:.4rem">
+        <div id="progress-bar" style="height:100%;width:0%;background:var(--green);border-radius:3px;transition:width .3s"></div>
+      </div>
+      <div id="progress-stats" style="font-size:11px;color:var(--text2)"></div>
+    </div>
+
+    <div style="display:flex;gap:.5rem;margin-top:.65rem">
+      <button class="btn primary" style="flex:1" onclick="runScreener()"><i class="ti ti-search"></i>Screener starten</button>
+      <button class="btn sm" onclick="clearScreenerCache()" title="24h-Cache leeren"><i class="ti ti-refresh"></i>Cache</button>
+    </div>
+  </div>
+</div>
+
+<!-- RIGHT: Results -->
+<div>
+  <div class="card card-sm" style="min-height:180px">
+    <div class="card-title"><i class="ti ti-list-check"></i>Ergebnisse</div>
+    <div id="screener-results"><div style="color:var(--text2);font-size:13px;text-align:center;padding:2.5rem 0"><i class="ti ti-search" style="font-size:32px;display:block;margin-bottom:.5rem;opacity:.4"></i>Screener starten</div></div>
+  </div>
+
+  <div class="card card-sm" id="detail-card" style="display:none">
+    <div class="card-title"><i class="ti ti-building"></i>Kandidat: <span id="detail-ticker">–</span></div>
+    <div class="g3" style="margin-bottom:.75rem">
+      <div class="metric"><div class="metric-label">Kurs</div><div class="metric-value" id="d-price">–</div></div>
+      <div class="metric"><div class="metric-label">IV</div><div class="metric-value warn" id="d-iv">–</div></div>
+      <div class="metric"><div class="metric-label">Ludwig-Score</div><div class="metric-value pos" id="d-score">–</div></div>
+      <div class="metric"><div class="metric-label">KGV</div><div class="metric-value" id="d-pe">–</div></div>
+      <div class="metric"><div class="metric-label">Div.-Rendite</div><div class="metric-value pos" id="d-yield">–</div></div>
+      <div class="metric"><div class="metric-label">Div.-Sicherheit</div><div class="metric-value pos" id="d-divsec">–</div></div>
+    </div>
+
+    <!-- Dividend detail box -->
+    <div class="div-section" style="margin-bottom:.65rem">
+      <div class="div-title"><i class="ti ti-coin" style="font-size:13px;vertical-align:-1px"></i> Dividenden-Analyse</div>
+      <div id="div-detail-content"></div>
+    </div>
+
+    <div id="detail-checklist"></div>
+    <button class="btn primary" style="margin-top:.65rem" onclick="sendToCalc()"><i class="ti ti-arrow-right"></i>Zum Rechner</button>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     TAB 2: LIVE CHAIN
+═══════════════════════════════════════════ -->
+<div class="content hidden" id="pane-chain">
+<div class="g2">
+<div>
+  <div class="card card-sm">
+    <div style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap">
+      <div class="frow" style="margin-bottom:0;flex:1;min-width:80px"><label>Ticker</label><input type="text" id="ch-sym" value="AAPL" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="frow" style="margin-bottom:0"><label>Quelle</label>
+        <select id="ch-src" onchange="onSrcChange()">
+          <option value="finnhub">Finnhub</option>
+          <option value="ibkr">IBKR Web API (lokal)</option>
+          <option value="demo" selected>Demo</option>
+        </select>
+      </div>
+      <button class="btn primary" onclick="loadExpirations()"><i class="ti ti-refresh"></i>Laden</button>
+    </div>
+  </div>
+
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-calendar"></i>Verfallsdaten</div>
+    <div id="expiry-chips" style="min-height:26px"><span style="color:var(--text2);font-size:12px">Ticker laden →</span></div>
+    <div id="expiry-note" style="font-size:11px;color:var(--text2);margin-top:.35rem">⭐ = 3. Freitag (Ludwig-bevorzugt)</div>
+  </div>
+
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-adjustments"></i>Delta-Filter (Ludwig: ATM = δ ~0.50)</div>
+    <div class="g2" style="margin-bottom:.5rem">
+      <div>
+        <label>Delta min</label>
+        <input type="range" id="d-min" min="0.10" max="0.49" step="0.01" value="0.20" oninput="updDelta();filterChain()">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2)"><span>0.10</span><span id="d-min-v" style="color:var(--green);font-weight:500">0.20</span><span>0.49</span></div>
+      </div>
+      <div>
+        <label>Delta max (Ludwig: 0.50)</label>
+        <input type="range" id="d-max" min="0.30" max="0.55" step="0.01" value="0.50" oninput="updDelta();filterChain()">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text2)"><span>0.30</span><span id="d-max-v" style="color:var(--green);font-weight:500">0.50</span><span>0.55</span></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.5rem">
+      <button class="btn sm" onclick="setDelta(0.45,0.50)">ATM Ludwig ⭐</button>
+      <button class="btn sm" onclick="setDelta(0.30,0.45)">Leicht OTM</button>
+      <button class="btn sm" onclick="setDelta(0.20,0.35)">OTM</button>
+      <button class="btn sm" onclick="setDelta(0.15,0.25)">Konservativ</button>
+    </div>
+    <div class="g3" style="gap:.5rem">
+      <div class="frow" style="margin-bottom:0"><label>Typ</label>
+        <select id="ch-type" onchange="filterChain()"><option value="put" selected>Put (CSP)</option><option value="call">Call (CC)</option><option value="both">Beide</option></select>
+      </div>
+      <div class="frow" style="margin-bottom:0"><label>Min. OI</label><input type="number" id="ch-oi" value="100" onchange="filterChain()"></div>
+      <div class="frow" style="margin-bottom:0"><label>IV max (%)</label><input type="number" id="ch-iv" value="50" onchange="filterChain()"></div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="card card-sm">
+    <div class="g4">
+      <div class="metric"><div class="metric-label">Kurs</div><div class="metric-value" id="sn-price">–</div></div>
+      <div class="metric"><div class="metric-label">IV30</div><div class="metric-value warn" id="sn-iv">–</div></div>
+      <div class="metric"><div class="metric-label">ATM Strike</div><div class="metric-value pos" id="sn-atm">–</div></div>
+      <div class="metric"><div class="metric-label">Ludwig Prämie</div><div class="metric-value pos" id="sn-prem">–</div></div>
+    </div>
+  </div>
+
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-star-filled"></i>Ludwig-Empfehlung</div>
+    <div id="ch-recommend"><span style="font-size:12px;color:var(--text2)">Kette laden →</span></div>
+  </div>
+
+  <div class="card card-sm">
+    <div style="font-size:11px;color:var(--text2);margin-bottom:.4rem">
+      <span style="background:var(--green-light);padding:1px 5px;border-radius:3px">⭐ Ludwig ATM</span>&nbsp;
+      <span style="background:var(--teal-light);padding:1px 5px;border-radius:3px">➤ ATM-Strike</span>&nbsp;
+      <span style="background:var(--blue-light);padding:1px 5px;border-radius:3px">Im Delta-Bereich</span>
+    </div>
+    <div class="chain-wrap" id="chain-table"><span style="font-size:12px;color:var(--text2);display:block;text-align:center;padding:2rem 0">Ticker + Datum wählen → Laden</span></div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     TAB 3: RECHNER
+═══════════════════════════════════════════ -->
+<div class="content hidden" id="pane-calculator">
+<div class="g2">
+<div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-tool"></i>Trade konfigurieren</div>
+    <div style="display:flex;gap:.4rem;margin-bottom:.75rem">
+      <button class="btn sm active" id="st-csp" onclick="setStrat('csp')" style="flex:1;justify-content:center">CSP</button>
+      <button class="btn sm" id="st-cc" onclick="setStrat('cc')" style="flex:1;justify-content:center">Covered Call</button>
+      <button class="btn sm" id="st-wheel" onclick="setStrat('wheel')" style="flex:1;justify-content:center">Wheel (Ludwig)</button>
+    </div>
+    <div class="g2">
+      <div class="frow"><label>Ticker</label><input type="text" id="c-ticker" value="AAPL" oninput="calcPremium()"></div>
+      <div class="frow"><label>Aktienkurs ($)</label><input type="number" id="c-price" value="55" oninput="calcPremium()"></div>
+      <div class="frow"><label>Strike ($)</label><input type="number" id="c-strike" value="55" oninput="calcPremium()"></div>
+      <div class="frow"><label>Prämie ($) je Kontrakt</label><input type="number" id="c-prem" value="120" oninput="calcPremium()"></div>
+      <div class="frow"><label>Laufzeit (Tage)</label><input type="number" id="c-days" value="30" oninput="calcPremium()"></div>
+      <div class="frow"><label>Kontrakte</label><input type="number" id="c-cont" value="1" oninput="calcPremium()"></div>
+      <div class="frow"><label>IV (%)</label><input type="number" id="c-iv" value="28" oninput="calcPremium()"></div>
+      <div class="frow"><label>Einstiegskurs Aktie ($)</label><input type="number" id="c-entry" value="55" oninput="calcPremium()"></div>
+      <div class="frow"><label>Dividende p.a. ($)</label><input type="number" id="c-div" value="2.20" step="0.01" oninput="calcPremium()"></div>
+      <div class="frow"><label>Div.-Rendite (%)</label><input type="number" id="c-yield" value="4.0" step="0.1" oninput="calcPremium()" readonly style="background:var(--bg3)"></div>
+    </div>
+  </div>
+
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-timeline"></i>Szenarien (Kap. 2)</div>
+    <div id="scenarios"></div>
+  </div>
+</div>
+
+<div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-math-function"></i>Ergebnis</div>
+    <div id="calc-results"></div>
+  </div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-chart-area"></i>Performance-Profil</div>
+    <div style="position:relative;height:190px"><canvas id="perfChart" role="img" aria-label="P&L Profil">P&L-Kurve der Optionsstrategie.</canvas></div>
+  </div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-circle-check"></i>Ludwig-Regel-Check</div>
+    <div id="rule-checks"></div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     TAB 4: ROLL-MANAGER
+═══════════════════════════════════════════ -->
+<div class="content hidden" id="pane-rolling">
+<div class="g2">
+<div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-refresh"></i>Roll-Simulation (Kap. 3 — Schritt 4)</div>
+    <div class="alert info"><i class="ti ti-info-circle"></i><div><strong>Ludwig:</strong> Rollen 5 Tage vor Verfall. Stufe 1 (niedriger Strike) → Stufe 2 (gleicher Strike) → Stufe 3 (Kontrakte erhöhen).</div></div>
+    <div class="g2">
+      <div class="frow"><label>Ursprünglicher Strike ($)</label><input type="number" id="r-strike" value="30" oninput="calcRoll()"></div>
+      <div class="frow"><label>Ursprüngliche Prämie ($)</label><input type="number" id="r-prem" value="100" oninput="calcRoll()"></div>
+      <div class="frow"><label>Aktueller Kurs ($)</label><input type="number" id="r-price" value="27" oninput="calcRoll()"></div>
+      <div class="frow"><label>Aktueller Put-Kurs ($)</label><input type="number" id="r-put" value="3.10" oninput="calcRoll()"></div>
+      <div class="frow"><label>Bisher gerollt (Prämien $)</label><input type="number" id="r-rolled" value="0" oninput="calcRoll()"></div>
+      <div class="frow"><label>Kontrakte</label><input type="number" id="r-cont" value="1" oninput="calcRoll()"></div>
+    </div>
+    <button class="btn primary" style="width:100%" onclick="calcRoll()"><i class="ti ti-refresh"></i>Berechnen</button>
+  </div>
+
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-target"></i>3 Rollstufen (Kap. 3)</div>
+    <div style="display:flex;flex-direction:column;gap:.4rem">
+      <div style="padding:.6rem;border:.5px solid var(--border);border-radius:var(--r)">
+        <div style="font-weight:500;font-size:12px;margin-bottom:2px"><span class="badge b-blue" style="margin-right:5px">Stufe 1</span>Niedriger Strike, gleiches Kontrakt</div>
+        <div style="font-size:11px;color:var(--text2)">Bevorzugt: tieferer Basispreis, 30–60 Tage. Immer höheren Zeitwert wählen.</div>
+      </div>
+      <div style="padding:.6rem;border:.5px solid var(--border);border-radius:var(--r)">
+        <div style="font-weight:500;font-size:12px;margin-bottom:2px"><span class="badge b-amber" style="margin-right:5px">Stufe 2</span>Gleicher Strike, längere Laufzeit</div>
+        <div style="font-size:11px;color:var(--text2)">Wenn Stufe 1 keine positive Nettoprämie. Roll auf gleichen Strike, 30–60 Tage.</div>
+      </div>
+      <div style="padding:.6rem;border:.5px solid var(--border);border-radius:var(--r)">
+        <div style="font-weight:500;font-size:12px;margin-bottom:2px"><span class="badge b-red" style="margin-right:5px">Stufe 3</span>Niedriger Strike + Kontrakte erhöhen</div>
+        <div style="font-size:11px;color:var(--text2)">Nur wenn Kapital vorhanden. Erhöht Erfolgschance drastisch — selten nötig (1–5%).</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-calculator"></i>Roll-Kalkulation</div>
+    <div id="roll-results"><div style="color:var(--text2);text-align:center;padding:1.5rem 0;font-size:13px">Eingaben links ausfüllen</div></div>
+  </div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-history"></i>Gewinnschwellen-Tracker</div>
+    <div id="be-track"></div>
+  </div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-arrows-diagonal"></i>Asymmetrischer Covered Call (Schritt 5)</div>
+    <div class="alert ok"><i class="ti ti-bulb"></i><div><strong>Ludwig:</strong> Bei 200 Aktien nur 1 ATM-Call — 3× mehr Prämie als 2 OTM-Calls. Erhält Aufwärtspotenzial.</div></div>
+    <div class="g2">
+      <div class="frow"><label>Anzahl Aktien</label><input type="number" id="acc-sh" value="200" oninput="calcAsymCC()"></div>
+      <div class="frow"><label>Kurs ($)</label><input type="number" id="acc-pr" value="25" oninput="calcAsymCC()"></div>
+      <div class="frow"><label>ATM Call Prämie ($)</label><input type="number" id="acc-atm" value="150" oninput="calcAsymCC()"></div>
+      <div class="frow"><label>OTM Call Prämie je ($)</label><input type="number" id="acc-otm" value="40" oninput="calcAsymCC()"></div>
+    </div>
+    <div id="acc-results"></div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     TAB 5: JOURNAL
+═══════════════════════════════════════════ -->
+<div class="content hidden" id="pane-journal">
+<div class="g2">
+<div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-plus"></i>Trade erfassen</div>
+    <div class="g2">
+      <div class="frow"><label>Ticker</label><input type="text" id="j-tick" placeholder="AAPL"></div>
+      <div class="frow"><label>Strategie</label>
+        <select id="j-strat"><option>CSP</option><option>Covered Call</option><option>Roll S1</option><option>Roll S2</option><option>Roll S3</option><option>Asym. CC</option></select>
+      </div>
+      <div class="frow"><label>Strike ($)</label><input type="number" id="j-strike" placeholder="55"></div>
+      <div class="frow"><label>Prämie ($)</label><input type="number" id="j-prem" placeholder="120"></div>
+      <div class="frow"><label>Eröffnet</label><input type="date" id="j-open"></div>
+      <div class="frow"><label>Verfall</label><input type="date" id="j-exp"></div>
+      <div class="frow"><label>Kontrakte</label><input type="number" id="j-cont" value="1"></div>
+      <div class="frow"><label>Status</label>
+        <select id="j-status"><option>Offen</option><option>Gewinn</option><option>Gerollt</option><option>Angedient</option><option>Verlust</option></select>
+      </div>
+    </div>
+    <div class="frow"><label>Notizen</label><input type="text" id="j-notes" placeholder="RSI steigend, Unterstützung bei..."></div>
+    <button class="btn primary" style="width:100%" onclick="addJournal()"><i class="ti ti-plus"></i>Trade hinzufügen</button>
+  </div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-chart-pie"></i>Portfolio-Metriken</div>
+    <div class="g2">
+      <div class="metric"><div class="metric-label">Offen</div><div class="metric-value" id="jm-open">–</div></div>
+      <div class="metric"><div class="metric-label">Kum. Prämien</div><div class="metric-value pos" id="jm-prem">–</div></div>
+      <div class="metric"><div class="metric-label">Win-Rate</div><div class="metric-value pos" id="jm-wr">–</div></div>
+      <div class="metric"><div class="metric-label">Ø Rendite</div><div class="metric-value pos" id="jm-avg">–</div></div>
+    </div>
+    <div class="divider"></div>
+    <div class="card-title"><i class="ti ti-cloud"></i>Cloud-Sync (iCloud / Dropbox / Google Drive)</div>
+    <div class="alert info" style="margin-bottom:.5rem"><i class="ti ti-info-circle"></i><div>JSON exportieren → in iCloud/Dropbox speichern → auf iPhone/iPad importieren. Funktioniert auf allen Geräten.</div></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn primary" onclick="exportJournal()"><i class="ti ti-download"></i>Journal exportieren (.json)</button>
+      <label class="btn" style="cursor:pointer"><i class="ti ti-upload"></i>Journal importieren
+        <input type="file" accept=".json" style="display:none" onchange="importJournal(event)">
+      </label>
+    </div>
+    <div id="journal-sync-msg" style="margin-top:.4rem;font-size:12px"></div>
+  </div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-percentage"></i>Rendite-Hochrechnung (Kap. 3)</div>
+    <div class="alert info"><i class="ti ti-info-circle"></i><div>Ludwig-Ziel: 15–25% p.a. durch systematisches Rollen.</div></div>
+    <div class="g2">
+      <div class="frow"><label>Kapital ($)</label><input type="number" id="rb-cap" value="30000" oninput="calcReturn()"></div>
+      <div class="frow"><label>Ø Prämie/Monat ($)</label><input type="number" id="rb-mo" value="450" oninput="calcReturn()"></div>
+    </div>
+    <div id="return-calc"></div>
+  </div>
+</div>
+<div>
+  <div class="card card-sm" style="min-height:300px">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span><i class="ti ti-list"></i> Trade-Journal</span><button class="btn xs" onclick="clearJournal()" style="color:var(--red)"><i class="ti ti-trash"></i> Alle löschen</button></div>
+    <div id="journal-list"></div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     TAB 6: MARKT
+═══════════════════════════════════════════ -->
+<div class="content hidden" id="pane-market">
+<div class="g2">
+<div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-world"></i>Markt-Übersicht</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem">
+      <div class="macro-card"><div class="macro-label">S&P 500 (SPY)</div><div class="macro-val">5.242</div><div class="macro-chg pos">+1.2%</div></div>
+      <div class="macro-card"><div class="macro-label">Nasdaq (QQQ)</div><div class="macro-val">18.103</div><div class="macro-chg pos">+0.8%</div></div>
+      <div class="macro-card"><div class="macro-label">VIX</div><div class="macro-val">16.4</div><div class="macro-chg pos">–2.1pt</div></div>
+      <div class="macro-card"><div class="macro-label">10J Treasury</div><div class="macro-val">4.32%</div><div class="macro-chg neg">+3bp</div></div>
+      <div class="macro-card"><div class="macro-label">Dollar (DXY)</div><div class="macro-val">104.2</div><div class="macro-chg neg">–0.3%</div></div>
+      <div class="macro-card"><div class="macro-label">Markt-Trend</div><div class="macro-val pos" style="font-size:14px">Aufwärts</div><div class="macro-chg">CSP-Einstiege OK</div></div>
+    </div>
+  </div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-calendar-event"></i>Earnings-Kalender (Kap. 7)</div>
+    <div class="alert warn"><i class="ti ti-alert-triangle"></i><div>Ludwig: Earnings halten möglich — prüfe historische Kursreaktion. IV-Crush kann vorteilhaft sein.</div></div>
+    <table>
+      <thead><tr><th>Ticker</th><th>Datum</th><th>IV</th><th>Div-Nächste</th><th>Empfehlung</th></tr></thead>
+      <tbody>
+        <tr><td>AAPL</td><td>24. Jul</td><td>28%</td><td>15. Aug $0.25</td><td><span class="badge b-green">OK</span></td></tr>
+        <tr><td>MSFT</td><td>23. Jul</td><td>24%</td><td>12. Sep $0.83</td><td><span class="badge b-green">OK</span></td></tr>
+        <tr><td>NVDA</td><td>28. Aug</td><td>62%</td><td>–</td><td><span class="badge b-red">IV zu hoch</span></td></tr>
+        <tr><td>JNJ</td><td>15. Jul</td><td>18%</td><td>3. Jun $1.24</td><td><span class="badge b-amber">Prämie niedrig</span></td></tr>
+        <tr><td>MRK</td><td>29. Jul</td><td>26%</td><td>8. Jul $0.77</td><td><span class="badge b-green">OK</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+<div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-flame"></i>Hot-List — Ludwig-konforme Kandidaten</div>
+    <div id="hot-list"></div>
+  </div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-wave-sine"></i>IV-Analyse (Kap. 6 — Ziel: 20–50%)</div>
+    <div style="position:relative;height:170px"><canvas id="ivChart" role="img" aria-label="IV Vergleich">IV-Werte verschiedener Aktien.</canvas></div>
+    <div class="alert ok" style="margin-top:.6rem"><i class="ti ti-check"></i><div>Grün = 20–50% optimal. Rot = zu hoch (>50%). Grau = zu niedrig (&lt;20%).</div></div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     TAB: PORTFOLIO-ANALYSE
+═══════════════════════════════════════════ -->
+<div class="content hidden" id="pane-portfolio">
+
+<!-- ═══ HEADER ═══ -->
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+  <div>
+    <h2 style="margin:0;font-size:1.1rem;font-weight:600">⚕️ Options-Doktor</h2>
+    <p style="margin:0;font-size:12px;color:var(--text2)">Positions-Analyse, Roll-Empfehlungen & Steuerhinweise</p>
+  </div>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+    <button class="btn primary" onclick="ibkrImportAll()"><i class="ti ti-download"></i>Von IBKR importieren</button>
+    <button class="btn" onclick="showAddPositionForm()"><i class="ti ti-plus"></i>Manuell hinzufügen</button>
+    <button class="btn" onclick="analyzeAllPositions()"><i class="ti ti-stethoscope"></i>Alle analysieren</button>
+  </div>
+</div>
+
+<!-- ═══ IBKR IMPORT STATUS ═══ -->
+<div id="import-status" style="margin-bottom:1rem"></div>
+
+<!-- ═══ MANUELLE EINGABE (eingeklappt) ═══ -->
+<div id="add-position-form" style="display:none;margin-bottom:1rem">
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-pencil"></i>Position manuell erfassen</div>
+    <div class="g2">
+      <div class="frow"><label>Ticker</label><input type="text" id="doc-ticker" placeholder="AAPL" oninput="this.value=this.value.toUpperCase()"></div>
+      <div class="frow"><label>Typ</label>
+        <select id="doc-type">
+          <option value="CSP">Cash Secured Put (CSP)</option>
+          <option value="CC">Covered Call (CC)</option>
+          <option value="STRANGLE">Strangle</option>
+          <option value="IRON_CONDOR">Iron Condor</option>
+          <option value="STOCK">Aktie (long)</option>
+        </select>
+      </div>
+      <div class="frow"><label>Strike ($)</label><input type="number" id="doc-strike" step="0.5"></div>
+      <div class="frow"><label>Verfall</label><input type="date" id="doc-expiry"></div>
+      <div class="frow"><label>Erhaltene Prämie ($)</label><input type="number" id="doc-premium" step="0.01"></div>
+      <div class="frow"><label>Kontrakte</label><input type="number" id="doc-contracts" value="1"></div>
+      <div class="frow"><label>Einstandskurs Aktie ($)</label><input type="number" id="doc-cost-basis" step="0.01" placeholder="Nur für CC"></div>
+      <div class="frow"><label>Anzahl Aktien</label><input type="number" id="doc-shares" placeholder="Nur für CC/Aktie"></div>
+    </div>
+    <div style="display:flex;gap:.5rem;margin-top:.75rem">
+      <button class="btn primary" onclick="addManualPosition()"><i class="ti ti-check"></i>Hinzufügen</button>
+      <button class="btn" onclick="document.getElementById('add-position-form').style.display='none'"><i class="ti ti-x"></i>Abbrechen</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ POSITIONS-LISTE ═══ -->
+<div id="positions-list">
+  <div class="alert info" style="margin-bottom:1rem">
+    <i class="ti ti-info-circle"></i>
+    <div>Klicke auf <strong>"Von IBKR importieren"</strong> um alle offenen Positionen automatisch zu laden (TWS muss laufen), oder füge Positionen manuell hinzu.</div>
+  </div>
+</div>
+
+<!-- ═══ DIAGNOSE PANEL ═══ -->
+<div id="diagnosis-panel" style="display:none;margin-top:1rem"></div>
+
+</div>
+
+
+<!-- settings -->
+<div class="content hidden" id="pane-settings">
+<div class="g2">
+<div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-key"></i>Datenquellen (Yahoo Finance)</div>
+    <div class="alert ok"><i class="ti ti-info-circle"></i><div>Kurse via Finnhub (dein bestehender Key) + CORS-Proxy. Strikes + Prämien werden per Black-Scholes berechnet. Kein Optionsdaten-Abo nötig.</div></div>
+    <div class="frow"><label>CORS-Proxy URL</label>
+      <div style="display:flex;gap:.4rem"><input type="text" id="api-key" value="https://my-cors-proxy.ahildebrand.workers.dev" placeholder="https://my-cors-proxy.ahildebrand.workers.dev"><button class="btn sm" onclick="toggleKey()"><i class="ti ti-eye" id="eye-icon"></i></button></div>
+    </div>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn primary" onclick="saveKey()"><i class="ti ti-check"></i>Speichern</button>
+      <button class="btn" onclick="testKey()"><i class="ti ti-wifi"></i>Testen</button>
+    </div>
+    <div id="key-result" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-terminal"></i>IBKR-Integration</div>
+    <div class="alert warn"><i class="ti ti-alert-triangle"></i><div><strong>Browser-Sicherheitsregel:</strong> GitHub Pages (HTTPS) blockiert HTTP-localhost-Verbindungen. Zwei Lösungen:</div></div>
+
+    <div style="font-size:12px;font-weight:600;margin:.4rem 0 .3rem">Option A — IBKR Web API (kein Proxy nötig)</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:.4rem">IBKR HTTPS Web API direkt aus TWS. TWS → Konfiguration → API → Web API aktivieren.</div>
+    <div class="frow"><label>IBKR Web API URL</label><input type="text" id="ibkr-api-url" value="https://localhost:5000/v1/api"></div>
+    <div class="frow"><label>OAuth Token (TWS → API → Web API)</label><input type="password" id="ibkr-token" placeholder="Token hier einfügen"></div>
+    <div style="display:flex;gap:.5rem;margin-bottom:.65rem">
+      <button class="btn primary" onclick="saveIBKRSettings()"><i class="ti ti-check"></i>Speichern</button>
+      <button class="btn" onclick="testIBKRWebAPI()"><i class="ti ti-wifi"></i>Testen</button>
+    </div>
+    <div id="ibkr-test-result"></div>
+
+    <div class="divider"></div>
+
+    <div style="font-size:12px;font-weight:600;margin-bottom:.3rem">Option B — Proxy mit HTTPS (einmalige Browser-Erlaubnis)</div>
+    <div class="proxy-code">pip install flask flask-cors ib_insync pyopenssl
+python ibkr_options_proxy.py  # startet auf https://localhost:5001
+
+# Einmalig: https://localhost:5001 im Browser öffnen
+# → "Erweitert" → "Weiter zu localhost" → fertig</div>
+    <div class="frow" style="margin-top:.5rem"><label>Proxy-URL</label><input type="text" id="proxy-url" value="http://localhost:5001"></div>
+    <button class="btn" onclick="testProxy()"><i class="ti ti-wifi"></i>Verbindung testen</button>
+    <div id="proxy-result" style="margin-top:.5rem"></div>
+  </div>
+</div>
+<div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-key"></i>Finnhub API-Key (Screener)</div>
+    <div class="alert info"><i class="ti ti-info-circle"></i><div>Kostenloser Key auf <strong>finnhub.io</strong> — 60 Calls/Min. Für ~600 Aktien ca. 10–15 Min. Ergebnis wird 24h gecacht.</div></div>
+    <div class="frow"><label>Finnhub API-Token</label>
+      <div style="display:flex;gap:.4rem"><input type="password" id="fh-key-settings" placeholder="z.B. d1abc123..."><button class="btn sm" onclick="toggleFhKey()"><i class="ti ti-eye" id="fh-eye"></i></button></div>
+    </div>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn primary" onclick="saveFhKey()"><i class="ti ti-check"></i>Speichern</button>
+      <button class="btn" onclick="testFhKey()"><i class="ti ti-wifi"></i>Testen</button>
+    </div>
+    <div id="fh-key-result" style="margin-top:.5rem"></div>
+  </div>
+    <div class="g2">
+      <div class="frow"><label>Standard Delta</label><input type="number" id="pref-delta" value="0.48" step="0.01"></div>
+      <div class="frow"><label>Ludwig-Laufzeit (Tage)</label><input type="number" id="pref-days" value="30"></div>
+      <div class="frow"><label>Min. OI</label><input type="number" id="pref-oi" value="100"></div>
+      <div class="frow"><label>Max. IV (%)</label><input type="number" id="pref-iv" value="50"></div>
+    </div>
+    <button class="btn primary" onclick="savePrefs()"><i class="ti ti-check"></i>Speichern</button>
+    <span id="prefs-ok" class="hidden" style="margin-left:.5rem;font-size:12px;color:var(--green)">✓ Gespeichert</span>
+  </div>
+  <div class="card card-sm">
+    <div class="card-title"><i class="ti ti-info-circle"></i>Deployment</div>
+    <div class="alert ok"><i class="ti ti-rocket"></i><div>Public Repo <strong>ahsub/premium-options</strong> ist sicher — API-Key bleibt im localStorage, niemals im Code.</div></div>
+    <div class="proxy-code">git add index.html
+git commit -m "Update PremiumOptions"
+git push origin main
+# → ahsub.github.io/premium-options</div>
+  </div>
+</div>
+</div>
+</div>
+
+</div><!-- /app -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// ════════════════════════════════════════════
+// SCREENER ENGINE (inline — kein separates .js nötig)
+// ════════════════════════════════════════════
+window.ScreenerEngine = (function(){
+
+const CURATED_50 = [
+  {t:'AAPL',price:212,pe:32,iv:28,payout:15,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:52,macd:true,support:205,resist:220,divYield:0.5,divGrowth:5,divStreak:12,fcfCoverage:8.5},
+  {t:'MSFT',price:445,pe:38,iv:22,payout:28,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:55,macd:true,support:430,resist:460,divYield:0.7,divGrowth:10,divStreak:22,fcfCoverage:7},
+  {t:'JNJ',price:155,pe:14,iv:18,payout:55,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:44,macd:false,support:150,resist:162,divYield:3.1,divGrowth:5.8,divStreak:62,fcfCoverage:2.1},
+  {t:'KO',price:63,pe:23,iv:19,payout:68,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:60,macd:false,support:60,resist:67,divYield:3.2,divGrowth:4.8,divStreak:62,fcfCoverage:1.8},
+  {t:'PG',price:168,pe:24,iv:16,payout:58,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:55,macd:true,support:163,resist:175,divYield:2.4,divGrowth:5.1,divStreak:68,fcfCoverage:2.4},
+  {t:'MRK',price:123,pe:14,iv:28,payout:40,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:50,macd:true,support:118,resist:130,divYield:2.7,divGrowth:6.5,divStreak:14,fcfCoverage:3.8},
+  {t:'PFE',price:27,pe:11,iv:29,payout:50,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:46,macd:true,support:25,resist:30,divYield:6.1,divGrowth:2.5,divStreak:14,fcfCoverage:1.6},
+  {t:'WMT',price:76,pe:30,iv:17,payout:38,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:58,macd:true,support:72,resist:80,divYield:1.3,divGrowth:2,divStreak:52,fcfCoverage:3.5},
+  {t:'ABT',price:116,pe:21,iv:21,payout:44,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:51,macd:true,support:112,resist:122,divYield:1.9,divGrowth:7.8,divStreak:52,fcfCoverage:3.1},
+  {t:'MMM',price:135,pe:16,iv:32,payout:45,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:38,macd:true,support:128,resist:142,divYield:2.1,divGrowth:0,divStreak:66,fcfCoverage:1.3},
+  {t:'VZ',price:40,pe:9,iv:22,payout:56,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:42,macd:false,support:37,resist:44,divYield:6.4,divGrowth:2,divStreak:18,fcfCoverage:1.1},
+  {t:'BLK',price:900,pe:20,iv:23,payout:48,fcf:true,revenue:true,weeklies:false,buyback:true,rsi:53,macd:true,support:870,resist:940,divYield:2.8,divGrowth:9.5,divStreak:14,fcfCoverage:4.2},
+  {t:'T',price:18,pe:8,iv:25,payout:60,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:45,macd:true,support:17,resist:20,divYield:6.6,divGrowth:1,divStreak:1,fcfCoverage:1.2},
+  {t:'XOM',price:118,pe:14,iv:20,payout:38,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:55,macd:true,support:112,resist:124,divYield:3.4,divGrowth:4,divStreak:41,fcfCoverage:2.8},
+  {t:'CVX',price:152,pe:16,iv:21,payout:42,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:50,macd:true,support:146,resist:160,divYield:4.1,divGrowth:3,divStreak:36,fcfCoverage:2.3},
+  {t:'BAC',price:42,pe:13,iv:26,payout:30,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:56,macd:true,support:39,resist:46,divYield:2.3,divGrowth:8,divStreak:3,fcfCoverage:0},
+  {t:'JPM',price:215,pe:12,iv:22,payout:28,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:60,macd:true,support:205,resist:225,divYield:2.2,divGrowth:7,divStreak:3,fcfCoverage:0},
+  {t:'HD',price:375,pe:22,iv:19,payout:55,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:53,macd:true,support:360,resist:390,divYield:2.4,divGrowth:6,divStreak:14,fcfCoverage:3},
+  {t:'LOW',price:245,pe:20,iv:20,payout:35,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:51,macd:true,support:236,resist:256,divYield:2.0,divGrowth:7,divStreak:40,fcfCoverage:3.5},
+  {t:'COST',price:880,pe:48,iv:16,payout:28,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:60,macd:true,support:850,resist:920,divYield:0.6,divGrowth:10,divStreak:20,fcfCoverage:5},
+  {t:'MCD',price:295,pe:22,iv:17,payout:60,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:53,macd:true,support:285,resist:308,divYield:2.3,divGrowth:5,divStreak:47,fcfCoverage:2.2},
+  {t:'DIS',price:112,pe:25,iv:27,payout:0,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:45,macd:false,support:106,resist:120,divYield:0,divGrowth:0,divStreak:0,fcfCoverage:2},
+  {t:'INTC',price:30,pe:18,iv:35,payout:65,fcf:false,revenue:false,weeklies:true,buyback:false,rsi:38,macd:false,support:27,resist:35,divYield:2.2,divGrowth:0,divStreak:8,fcfCoverage:0.8},
+  {t:'IBM',price:175,pe:18,iv:20,payout:65,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:52,macd:true,support:168,resist:184,divYield:3.4,divGrowth:1,divStreak:28,fcfCoverage:1.6},
+  {t:'CAT',price:340,pe:16,iv:22,payout:32,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:55,macd:true,support:325,resist:358,divYield:1.6,divGrowth:7,divStreak:30,fcfCoverage:2.8},
+  {t:'DE',price:420,pe:14,iv:24,payout:18,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:50,macd:true,support:400,resist:444,divYield:1.5,divGrowth:8,divStreak:4,fcfCoverage:3.2},
+  {t:'GE',price:165,pe:28,iv:26,payout:10,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:58,macd:true,support:156,resist:175,divYield:0.7,divGrowth:10,divStreak:1,fcfCoverage:4},
+  {t:'HON',price:210,pe:22,iv:18,payout:40,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:49,macd:true,support:202,resist:220,divYield:2.1,divGrowth:5,divStreak:14,fcfCoverage:2.5},
+  {t:'RTX',price:115,pe:20,iv:19,payout:38,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:54,macd:true,support:110,resist:122,divYield:2.2,divGrowth:4,divStreak:30,fcfCoverage:2.2},
+  {t:'LMT',price:480,pe:16,iv:17,payout:45,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:52,macd:true,support:460,resist:504,divYield:2.7,divGrowth:5,divStreak:20,fcfCoverage:2.6},
+  {t:'NEE',price:72,pe:18,iv:20,payout:60,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:50,macd:true,support:68,resist:77,divYield:3.2,divGrowth:10,divStreak:28,fcfCoverage:1.5},
+  {t:'SO',price:84,pe:20,iv:15,payout:78,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:52,macd:false,support:80,resist:88,divYield:3.4,divGrowth:3,divStreak:23,fcfCoverage:1.2},
+  {t:'DUK',price:105,pe:19,iv:14,payout:72,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:50,macd:false,support:100,resist:110,divYield:3.9,divGrowth:3,divStreak:17,fcfCoverage:1.1},
+  {t:'AMGN',price:288,pe:16,iv:24,payout:45,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:46,macd:true,support:278,resist:300,divYield:3.2,divGrowth:9,divStreak:12,fcfCoverage:2.8},
+  {t:'ABBV',price:172,pe:16,iv:22,payout:55,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:52,macd:true,support:165,resist:180,divYield:3.6,divGrowth:8,divStreak:12,fcfCoverage:2.4},
+  {t:'BMY',price:55,pe:14,iv:26,payout:52,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:44,macd:true,support:52,resist:59,divYield:4.6,divGrowth:5,divStreak:3,fcfCoverage:2.1},
+  {t:'LLY',price:780,pe:50,iv:30,payout:15,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:62,macd:true,support:750,resist:820,divYield:0.7,divGrowth:15,divStreak:8,fcfCoverage:6},
+  {t:'UNH',price:520,pe:18,iv:20,payout:28,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:48,macd:false,support:500,resist:548,divYield:1.5,divGrowth:12,divStreak:14,fcfCoverage:3.5},
+  {t:'CVS',price:58,pe:10,iv:24,payout:30,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:42,macd:false,support:55,resist:63,divYield:4.1,divGrowth:0,divStreak:8,fcfCoverage:1.8},
+  {t:'TGT',price:155,pe:16,iv:26,payout:48,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:44,macd:false,support:148,resist:166,divYield:3.3,divGrowth:4,divStreak:52,fcfCoverage:2.3},
+  {t:'NKE',price:75,pe:24,iv:28,payout:38,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:42,macd:false,support:70,resist:82,divYield:2.1,divGrowth:11,divStreak:22,fcfCoverage:3.2},
+  {t:'SBUX',price:92,pe:24,iv:28,payout:62,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:48,macd:false,support:87,resist:98,divYield:2.8,divGrowth:8,divStreak:14,fcfCoverage:2},
+  {t:'PM',price:118,pe:18,iv:18,payout:88,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:56,macd:true,support:112,resist:126,divYield:5.2,divGrowth:3,divStreak:15,fcfCoverage:1.4},
+  {t:'MO',price:44,pe:9,iv:20,payout:80,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:50,macd:false,support:42,resist:47,divYield:8.6,divGrowth:4,divStreak:54,fcfCoverage:1.2},
+  {t:'O',price:55,pe:38,iv:16,payout:75,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:48,macd:false,support:52,resist:59,divYield:5.8,divGrowth:3,divStreak:30,fcfCoverage:1.3},
+  {t:'AMT',price:185,pe:40,iv:18,payout:80,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:50,macd:true,support:178,resist:195,divYield:3.1,divGrowth:10,divStreak:13,fcfCoverage:1.4},
+  {t:'CCI',price:98,pe:35,iv:20,payout:85,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:44,macd:false,support:93,resist:105,divYield:6.2,divGrowth:7,divStreak:9,fcfCoverage:1.2},
+  {t:'D',price:52,pe:18,iv:16,payout:70,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:46,macd:false,support:49,resist:56,divYield:5.1,divGrowth:2,divStreak:20,fcfCoverage:1.1},
+  {t:'OKE',price:82,pe:16,iv:22,payout:65,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:54,macd:true,support:78,resist:88,divYield:4.8,divGrowth:4,divStreak:26,fcfCoverage:1.6},
+  {t:'WPC',price:58,pe:20,iv:18,payout:78,fcf:true,revenue:true,weeklies:false,buyback:false,rsi:50,macd:false,support:55,resist:62,divYield:6.0,divGrowth:3,divStreak:26,fcfCoverage:1.3},
+];
+
+const CACHE_KEY = 'screener_cache_v2';
+const CACHE_TTL = 24*60*60*1000;
+
+function loadCache(){
+  try{
+    const raw = localStorage.getItem(CACHE_KEY);
+    if(!raw) return null;
+    const {ts,data} = JSON.parse(raw);
+    if(Date.now()-ts > CACHE_TTL) return null;
+    return data;
+  }catch(e){ return null; }
+}
+
+function saveCache(data){
+  try{ localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(),data})); }catch(e){}
+}
+
+function clearCache(){
+  localStorage.removeItem(CACHE_KEY);
+}
+
+async function fetchFinnhub(url, key){
+  const sep = url.includes('?') ? '&' : '?';
+  const r = await fetch(`${url}${sep}token=${key}`, {signal:AbortSignal.timeout(8000)});
+  if(!r.ok) throw new Error('FH HTTP '+r.status);
+  return r.json();
+}
+
+async function runFullScreener(params, fhKey, onProgress, _unused){
+  // Check cache first
+  const cached = loadCache();
+  if(cached && cached.length > 0){
+    onProgress({pct:100, msg:`Cache: ${cached.length} Aktien geladen`, phase:'cache'});
+    return cached;
+  }
+
+  // Use curated list as base — enrich with live Finnhub data
+  const base = [...CURATED_50];
+  const results = [];
+  const total = base.length;
+
+  for(let i=0; i<total; i++){
+    const s = {...base[i]};
+    onProgress({pct:Math.round(i/total*100), msg:`${s.t} (${i+1}/${total})`, phase:2});
+    try{
+      const [q, f] = await Promise.all([
+        fetchFinnhub(`https://finnhub.io/api/v1/quote?symbol=${s.t}`, fhKey),
+        fetchFinnhub(`https://finnhub.io/api/v1/stock/metric?symbol=${s.t}&metric=all`, fhKey),
+      ]);
+      if(q.c > 0) s.price = q.c;
+      const m = f.metric || {};
+      if(m['peNormalizedAnnual'] > 0) s.pe = m['peNormalizedAnnual'];
+      if(m['dividendYieldIndicatedAnnual'] >= 0) s.divYield = m['dividendYieldIndicatedAnnual'];
+      if(m['payoutRatioAnnual'] > 0) s.payout = m['payoutRatioAnnual'];
+      if(m['52WeekHigh'] && m['52WeekLow']){
+        const range = m['52WeekHigh'] - m['52WeekLow'];
+        s.support = m['52WeekLow'] + range * 0.25;
+        s.resist  = m['52WeekHigh'] - range * 0.1;
+      }
+    } catch(e){
+      // keep static data on error
+    }
+    results.push(s);
+    // Rate limit: 60 calls/min → ~1s delay per 2 tickers
+    if(i % 2 === 1) await new Promise(r=>setTimeout(r,1050));
+  }
+  saveCache(results);
+  onProgress({pct:100, msg:`Fertig: ${results.length} Aktien`, phase:2});
+  return results;
+}
+
+function analyzePosition(pos){
+  const inTheMoney = pos.type==='put' ? pos.currentPrice < pos.strike : pos.currentPrice > pos.strike;
+  const intrinsic  = pos.type==='put'
+    ? Math.max(0, pos.strike - pos.currentPrice)
+    : Math.max(0, pos.currentPrice - pos.strike);
+  const timeValue  = Math.max(0, (pos.currentOptionPrice||0) - intrinsic);
+  const origPremium = (pos.premium||0) * (pos.contracts||1) * 100;
+  const closeCost   = (pos.currentOptionPrice||0) * (pos.contracts||1) * 100;
+  const unrealizedPnL = origPremium - closeCost;
+  const pnlPct = origPremium > 0 ? (unrealizedPnL/origPremium*100) : 0;
+  const dte = pos.daysToExpiry || 0;
+  const bePrice = pos.type==='put' ? pos.strike - pos.premium : pos.strike + pos.premium;
+
+  // Roll scenarios
+  const rollDetails = inTheMoney || dte <= 21 ? [
+    {level:1, label:'Niedriger Strike, 30d', netPrem: Math.round((pos.premium||0)*0.6*100), viable:true},
+    {level:2, label:'Gleicher Strike, 45d',  netPrem: Math.round((pos.premium||0)*0.3*100), viable:true},
+    {level:3, label:'Niedriger Strike, 2×',  netPrem: Math.round((pos.premium||0)*1.1*100), viable:pos.strike*0.9>bePrice},
+  ] : null;
+
+  let action, actionColor;
+  const profitPct = pnlPct;
+  if(profitPct >= 50){ action='GEWINN MITNEHMEN'; actionColor='green'; }
+  else if(dte <= 5)  { action='VERFALL BALD'; actionColor='amber'; }
+  else if(inTheMoney){ action='ROLLEN NÖTIG'; actionColor='red'; }
+  else if(dte <= 21) { action='ROLLEN PRÜFEN (21 DTE)'; actionColor='amber'; }
+  else               { action='HALTEN'; actionColor='blue'; }
+
+  const reasoning = inTheMoney
+    ? `Im Geld — Kurs $${pos.currentPrice?.toFixed(2)} vs Strike $${pos.strike}. Schließkosten: $${closeCost.toFixed(0)}.`
+    : profitPct >= 50
+    ? `50%+ Gewinn erreicht — Ludwig empfiehlt Gewinnmitnahme.`
+    : dte <= 21
+    ? `21 DTE erreicht — Rollentscheidung nach Ludwig-Kap.3.`
+    : `Position OK. DTE: ${dte}d, Zeitwert: $${timeValue.toFixed(2)}.`;
+
+  return {
+    ...pos, intrinsic, timeValue, closeCost, origPremium,
+    unrealizedPnL, pnlPct, bePrice, inTheMoney,
+    action, actionColor, reasoning, rollDetails,
+    currentPrice: pos.currentPrice || pos.strike,
+  };
+}
+
+return { CURATED_50, loadCache, saveCache, clearCache, runFullScreener, analyzePosition };
+})();
+
+</script>
+<script>
+// ════════════════════════════════════════════
+// DATA
+// ════════════════════════════════════════════
+const STOCKS = [
+  {t:'AAPL',price:53.2,pe:18,iv:28,payout:15,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:52,macd:true,support:51.2,resist:58.4,
+   divYield:0.6,divGrowth:4.5,divStreak:12,fcfCoverage:8.5,aristocrat:false},
+  {t:'MSFT',price:42.1,pe:22,iv:24,payout:28,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:48,macd:true,support:41.0,resist:47.0,
+   divYield:0.8,divGrowth:10.2,divStreak:22,fcfCoverage:6.2,aristocrat:false},
+  {t:'JNJ',price:38.5,pe:14,iv:18,payout:55,fcf:true,revenue:true,weeklies:true,buyback:false,rsi:44,macd:false,support:37.0,resist:42.0,
+   divYield:3.1,divGrowth:5.8,divStreak:62,fcfCoverage:2.1,aristocrat:true},
+  {t:'KO', price:28.4,pe:23,iv:19,payout:72,fcf:true,revenue:false,weeklies:true,buyback:true,rsi:60,macd:false,support:27.0,resist:30.0,
+   divYield:3.4,divGrowth:4.8,divStreak:62,fcfCoverage:1.8,aristocrat:true},
+  {t:'PG', price:72.1,pe:24,iv:16,payout:58,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:55,macd:true,support:70.0,resist:75.0,
+   divYield:2.4,divGrowth:5.1,divStreak:68,fcfCoverage:2.4,aristocrat:true},
+  {t:'MMM',price:66.3,pe:12,iv:32,payout:45,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:38,macd:true,support:64.0,resist:70.0,
+   divYield:5.8,divGrowth:0,divStreak:0,fcfCoverage:1.3,aristocrat:false},
+  {t:'VZ', price:18.9,pe:8,iv:22,payout:56,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:42,macd:false,support:18.0,resist:21.0,
+   divYield:6.4,divGrowth:2.0,divStreak:18,fcfCoverage:1.1,aristocrat:false},
+  {t:'MRK',price:55.8,pe:16,iv:26,payout:40,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:50,macd:true,support:54.0,resist:60.0,
+   divYield:2.7,divGrowth:6.5,divStreak:14,fcfCoverage:3.8,aristocrat:false},
+  {t:'PFE',price:22.7,pe:11,iv:29,payout:50,fcf:true,revenue:false,weeklies:true,buyback:false,rsi:46,macd:true,support:21.5,resist:25.0,
+   divYield:6.2,divGrowth:2.5,divStreak:14,fcfCoverage:1.6,aristocrat:false},
+  {t:'WMT',price:44.2,pe:21,iv:17,payout:38,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:58,macd:false,support:43.0,resist:47.0,
+   divYield:1.3,divGrowth:2.0,divStreak:52,fcfCoverage:3.5,aristocrat:true},
+  {t:'ABT',price:62.1,pe:19,iv:21,payout:44,fcf:true,revenue:true,weeklies:true,buyback:true,rsi:51,macd:true,support:60.0,resist:66.0,
+   divYield:1.9,divGrowth:7.8,divStreak:52,fcfCoverage:3.1,aristocrat:true},
+  {t:'BLK',price:74.5,pe:17,iv:23,payout:48,fcf:true,revenue:true,weeklies:false,buyback:true,rsi:53,macd:true,support:72.0,resist:79.0,
+   divYield:2.8,divGrowth:9.5,divStreak:14,fcfCoverage:4.2,aristocrat:false},
+];
+
+let journalEntries = [];
+
+let chainData=[], selectedExpiry='', stockPrice=0, currentStrat='csp';
+let perfChartInst=null, ivChartInst=null;
+
+// ════════════════════════════════════════════
+// TAB ROUTING
+// ════════════════════════════════════════════
+function showTab(tab){
+  ['screener','chain','calculator','rolling','journal','market','portfolio','settings'].forEach(t=>{
+    document.getElementById('pane-'+t).classList.toggle('hidden', t!==tab);
+    document.getElementById('tab-'+t).classList.toggle('active', t===tab);
+  });
+  if(tab==='calculator') setTimeout(()=>{ calcPremium(); },50);
+  if(tab==='rolling')    setTimeout(()=>{ calcRoll(); calcAsymCC(); },50);
+  if(tab==='journal')    { renderJournal(); calcReturn(); }
+  if(tab==='market')     setTimeout(()=>{ renderIVChart(); renderHotList(); },50);
+  if(tab==='chain'&&chainData.length===0) loadDemoChain('AAPL');
+}
+
+// ════════════════════════════════════════════
+// DIVIDEND SCORING
+// ════════════════════════════════════════════
+function divYieldScore(y){
+  // 2–4% = sweet spot (+0.5), >4% = bonus but warn (+0.3), <1% = small (+0.1)
+  if(y>=2&&y<=4) return 0.5;
+  if(y>4)        return 0.3;
+  if(y>=1)       return 0.2;
+  return 0.1;
+}
+
+function divGrowthScore(g){
+  if(g>5)        return 0.6;
+  if(g>=2)       return 0.3;
+  return 0;
+}
+
+function divSecurityScore(s){
+  // Payout 0–4 pts
+  let payout_pts = s.payout<=40?4:s.payout<=50?3:s.payout<=60?2:s.payout<=75?1:0;
+  // FCF coverage 0–3 pts
+  let fcf_pts = s.fcfCoverage>=3?3:s.fcfCoverage>=2?2:s.fcfCoverage>=1.2?1:0;
+  // Streak / Aristocrat 0–3 pts
+  let streak_pts = s.divStreak>=50?3:s.divStreak>=25?2:s.divStreak>=10?1:0;
+  return {total:payout_pts+fcf_pts+streak_pts, payout:payout_pts, fcf:fcf_pts, streak:streak_pts};
+}
+
+function ludwigScore(s){
+  let base = 0;
+  // Fundamentals (max 5)
+  if(s.revenue) base+=1;
+  if(s.fcf)     base+=1;
+  if(s.pe<=20)  base+=1; else if(s.pe<=25) base+=0.5;
+  if(s.payout<=60) base+=0.5;
+  if(s.buyback) base+=0.5;
+  // Options quality (max 2)
+  if(s.weeklies)       base+=0.5;
+  if(s.iv>=20&&s.iv<=50) base+=1;
+  if(s.price>=15&&s.price<=80) base+=0.5;
+  // Chart (max 1.5)
+  if(s.rsi<70&&s.rsi>30) base+=0.5;
+  if(s.macd)             base+=0.5;
+  if(s.price>s.support*0.95&&s.price<s.support*1.08) base+=0.5;
+  // Dividend bonus (max +1.1)
+  base += divYieldScore(s.divYield||0);
+  base += divGrowthScore(s.divGrowth||0);
+  // Cap at 10
+  return Math.min(10, base);
+}
+
+// ════════════════════════════════════════════
+// SCREENER
+// ════════════════════════════════════════════
+// Re-filter ohne neuen API-Call (nutzt gecachte/_screenerResults)
+function refilterScreener(){
+  if(!_screenerResults || _screenerResults.length === 0){
+    // Noch kein Screener-Lauf — prüfe ob Cache vorhanden
+    const cached = window.ScreenerEngine?.loadCache();
+    if(cached && cached.length > 0){
+      _screenerResults = cached;
+    } else {
+      return; // Kein Cache, kein Lauf → nichts zu filtern
+    }
+  }
+  const params = getScreenerParams();
+  const results = _screenerResults.filter(s => {
+    if(!s) return false;
+    if(s.price < (params.pmin||15) || s.price > (params.pmax||80)) return false;
+    if(params.peMax && s.pe > 0 && s.pe > params.peMax) return false;
+    if(s.iv > 0 && s.iv < (params.ivMin||15)) return false;
+    if(s.iv > 0 && s.iv > (params.ivMax||60)) return false;
+    if(params.payoutMax && s.payout > params.payoutMax) return false;
+    if(params.needFcf && !s.fcf) return false;
+    if(params.needRevenue && !s.revenue) return false;
+    const y = s.divYield||0;
+    if(params.divYield==='lt2'  && y>=2)          return false;
+    if(params.divYield==='2to4' && (y<2||y>4))    return false;
+    if(params.divYield==='gt4'  && y<=4)           return false;
+    if(params.divYield==='none' && y>0)            return false;
+    const g = s.divGrowth||0;
+    if(params.divGrowth==='lt2'  && g>=2)          return false;
+    if(params.divGrowth==='2to5' && (g<2||g>5))   return false;
+    if(params.divGrowth==='gt5'  && g<=5)          return false;
+    if((params.aristocratMin||0)>0 && (s.divStreak||0)<params.aristocratMin) return false;
+    const chart = document.getElementById('s-chart').value;
+    if(chart==='rsi'  && (s.rsi>70||s.rsi<30)) return false;
+    if(chart==='macd' && !s.macd)              return false;
+    if(chart==='both' && (!s.macd||s.rsi>70))  return false;
+    return true;
+  }).sort((a,b)=>(b.score||0)-(a.score||0));
+  renderScreenerResults(results);
+}
+
+function getScreenerParams(){
+  return {
+    pmin:      +document.getElementById('s-pmin').value||15,
+    pmax:      +document.getElementById('s-pmax').value||80,
+    peMax:     +document.getElementById('s-pe').value||25,
+    ivMin:     +document.getElementById('s-ivmin').value||20,
+    ivMax:     +document.getElementById('s-ivmax').value||50,
+    payoutMax: +document.getElementById('s-payout').value||60,
+    needRevenue: document.getElementById('s-rev').checked,
+    needFcf:     document.getElementById('s-fcf').checked,
+    needWeeklies:document.getElementById('s-week').checked,
+    needBuyback: document.getElementById('s-buyback').checked,
+    divYield:  ([...document.querySelectorAll('input[name="div-yield"]')].find(r=>r.checked)?.value)||'any',
+    divGrowth: ([...document.querySelectorAll('input[name="div-growth"]')].find(r=>r.checked)?.value)||'any',
+    aristocratMin: +document.getElementById('div-aristocrat').value||0,
+    universe:  ([...document.querySelectorAll('input[name="universe"]')].find(r=>r.checked)?.value)||'all',
+  };
+}
+
+async function runScreener(){
+  const params = getScreenerParams();
+
+  // Get Finnhub key (settings or inline field)
+  const fhKey = document.getElementById('fh-key').value.trim() ||
+                localStorage.getItem('finnhub_key') || '';
+
+  // Show progress
+  const prog = document.getElementById('screener-progress');
+  prog.style.display = 'block';
+  document.getElementById('screener-results').innerHTML =
+    '<div style="color:var(--text2);font-size:13px;text-align:center;padding:1.5rem 0"><span class="spinner"></span> Läuft...</div>';
+
+  const onProgress = ({pct, msg, phase}) => {
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('progress-pct').textContent = pct + '%';
+    document.getElementById('progress-msg').textContent = msg;
+    if(phase==='cache') document.getElementById('progress-stats').textContent = '⚡ Aus Cache — kein API-Call nötig';
+    else if(phase==='fallback') document.getElementById('progress-stats').textContent = '📋 Kuratierte Liste ohne API';
+    else if(phase===1) document.getElementById('progress-stats').textContent = `Phase 1: Schnell-Filter (Kurs $15–$80)`;
+    else if(phase===2) document.getElementById('progress-stats').textContent = `Phase 2: Fundamentaldaten via Finnhub`;
+  };
+
+  // Curated-only mode or no API
+  let universe = params.universe;
+  let allResults;
+
+  try {
+    if(universe==='curated' || !fhKey) {
+      // Use static list
+      const base = window.ScreenerEngine?.CURATED_50 || STOCKS;
+      allResults = base.map(s=>({...s, score: ludwigScore(s)}));
+      onProgress({pct:100, msg:`Kuratierte Liste: ${allResults.length} Aktien`, phase:'fallback'});
+    } else {
+      // Live Finnhub screening
+      allResults = await window.ScreenerEngine.runFullScreener(params, fhKey, onProgress, null);
+    }
+  } catch(e) {
+    // Fallback on error
+    const base = window.ScreenerEngine?.CURATED_50 || STOCKS;
+    allResults = base.map(s=>({...s, score: ludwigScore(s)}));
+    onProgress({pct:100, msg:`Fehler: ${e.message} — kuratierte Liste`, phase:'fallback'});
+    document.getElementById('progress-stats').textContent = '⚠ API-Fehler — Demo-Daten angezeigt';
+  }
+
+  // Store ALL results for re-filtering without new API call
+  _screenerResults = allResults || [];
+
+  // Apply remaining filters (chart, aristocrat) and render
+  const results = _screenerResults.filter(s=>{
+    if(!s) return false;
+    const chart = document.getElementById('s-chart').value;
+    if(chart==='rsi'  && (s.rsi>70||s.rsi<30)) return false;
+    if(chart==='macd' && !s.macd) return false;
+    if(chart==='both' && (!s.macd||s.rsi>70)) return false;
+    if(params.aristocratMin>0 && (s.divStreak||0)<params.aristocratMin) return false;
+    return true;
+  }).sort((a,b)=>(b.score||0)-(a.score||0));
+
+  _screenerResults = results;
+  renderScreenerResults(results);
+  prog.style.display = 'none';
+}
+
+function renderScreenerResults(results) {
+  const el = document.getElementById('screener-results');
+  if(!results.length){
+    el.innerHTML='<div style="color:var(--text2);text-align:center;padding:1.5rem;font-size:13px">Keine Kandidaten — Kriterien lockern</div>';
+    return;
+  }
+  const universeLabel = ([...document.querySelectorAll('input[name="universe"]')].find(r=>r.checked)?.value)||'all';
+  const univNames = {all:'S&P500+DJ30+Nasdaq100',dj30:'DJ30',ndx100:'Nasdaq100',curated:'Kurzliste'};
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--text2);padding:.3rem .5rem;margin-bottom:.3rem;display:flex;justify-content:space-between">
+      <span><strong>${results.length}</strong> Kandidaten aus ${univNames[universeLabel]||universeLabel}</span>
+      <span style="color:var(--green)">Sortiert nach Ludwig-Score</span>
+    </div>
+  ` + results.map(s=>`
+    <div class="sr" onclick="showDetail('${s.t}')">
+      <div class="sr-ticker">${s.t}</div>
+      <div style="flex:1">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+          <div class="sr-bar"><div class="sr-fill" style="width:${(s.score||0)*10}%"></div></div>
+        </div>
+        <div style="font-size:11px;color:var(--text2)">
+          $${(s.price||0).toFixed(1)} · IV ${s.iv||'?'}% · Div ${(s.divYield||0).toFixed(1)}% · ↑${(s.divGrowth||0).toFixed(1)}%/J · ${s.divStreak||0}J Streak
+        </div>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center">
+        <span class="badge ${(s.score||0)>=8?'b-green':(s.score||0)>=6.5?'b-amber':'b-gray'}">${(s.score||0).toFixed(1)}</span>
+        <button class="btn xs b-teal" title="Optionskette öffnen" onclick="event.stopPropagation();openChainFor('${s.t}',${s.price||0})"><i class="ti ti-table"></i></button>
+        <button class="btn xs" title="Zum Rechner" onclick="event.stopPropagation();openCalcFor('${s.t}',${s.price||0},${s.iv||25})"><i class="ti ti-calculator"></i></button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function clearScreenerCache() {
+  if(window.ScreenerEngine) window.ScreenerEngine.clearCache();
+  document.getElementById('progress-stats').textContent = 'Cache geleert — nächster Screener-Lauf holt frische Daten';
+  document.getElementById('progress-msg').textContent = 'Cache gelöscht';
+  document.getElementById('screener-progress').style.display='block';
+  setTimeout(()=>{ document.getElementById('screener-progress').style.display='none'; }, 2500);
+}
+
+function showDetail(ticker){
+  const s=STOCKS.find(x=>x.t===ticker);
+  if(!s) return;
+  const score=ludwigScore(s);
+  const sec=divSecurityScore(s);
+  document.getElementById('detail-card').style.display='block';
+  document.getElementById('detail-ticker').textContent=s.t;
+  document.getElementById('d-price').textContent='$'+s.price;
+  document.getElementById('d-iv').textContent=s.iv+'%';
+  document.getElementById('d-score').textContent=score.toFixed(1)+'/10';
+  document.getElementById('d-pe').textContent=s.pe+'x';
+  document.getElementById('d-yield').textContent=(s.divYield||0).toFixed(1)+'%';
+  document.getElementById('d-divsec').textContent=sec.total+'/10';
+
+  // Dividend detail
+  const yieldBonus=divYieldScore(s.divYield||0);
+  const growthBonus=divGrowthScore(s.divGrowth||0);
+  const yieldLabel=s.divYield>=2&&s.divYield<=4?'Sweet Spot (2–4%)':s.divYield>4?'Hoch (Vorsicht!)':s.divYield>0?'Niedrig':'Keine';
+  const growLabel=s.divGrowth>5?'>5% p.a. ⭐':s.divGrowth>=2?'2–5% p.a.':'<2% p.a.';
+  document.getElementById('div-detail-content').innerHTML=`
+    <div class="rrow"><span class="rrow-label">Dividendenrendite</span><span>${(s.divYield||0).toFixed(1)}% — ${yieldLabel} <span class="badge b-green">+${yieldBonus.toFixed(1)} Pkt</span></span></div>
+    <div class="rrow"><span class="rrow-label">Dividendenwachstum</span><span>${growLabel} <span class="badge ${growthBonus>0?'b-green':'b-gray'}">+${growthBonus.toFixed(1)} Pkt</span></span></div>
+    <div class="rrow"><span class="rrow-label">Payout-Ratio</span><span>${s.payout}% ${s.payout<=60?'<span class="badge b-green">✓</span>':'<span class="badge b-red">Zu hoch</span>'}</span></div>
+    <div class="rrow"><span class="rrow-label">FCF-Deckung (×)</span><span>${(s.fcfCoverage||0).toFixed(1)}× <span class="badge ${sec.fcf>=2?'b-green':sec.fcf>=1?'b-amber':'b-red'}">${sec.fcf}/3 Pkt</span></span></div>
+    <div class="rrow"><span class="rrow-label">Dividend-Streak</span><span>${s.divStreak||0} Jahre ${s.divStreak>=50?'👑 King':s.divStreak>=25?'⭐ Aristocrat':''} <span class="badge ${sec.streak>=2?'b-green':sec.streak>=1?'b-amber':'b-gray'}">${sec.streak}/3 Pkt</span></span></div>
+    <div class="rrow" style="border-bottom:none"><span class="rrow-label">Gesamt-Sicherheitsscore</span><span style="font-weight:600">${sec.total}/10</span></div>
+    <div class="div-score" style="margin-top:.4rem">
+      <span style="font-size:11px;color:var(--text2)">Sicherheit</span>
+      <div class="div-score-bar"><div class="div-score-fill" style="width:${sec.total*10}%;background:${sec.total>=7?'var(--green)':sec.total>=4?'var(--amber)':'var(--red)'}"></div></div>
+      <span style="font-size:11px;font-weight:500">${sec.total}/10</span>
+    </div>
+    ${s.divYield>4?'<div style="font-size:11px;color:var(--amber);margin-top:.3rem"><i class="ti ti-alert-triangle"></i> Ludwig: Hohe Div.-Rendite ≠ sicherer Trade. FCF-Deckung beachten.</div>':''}
+  `;
+
+  const checks=[
+    {ok:s.price>=15&&s.price<=80,txt:`Kurs $${s.price} (Ziel $15–$80)`},
+    {ok:s.revenue,txt:'Umsatz steigend (10 Jahre)'},
+    {ok:s.fcf,txt:'Positiver freier Cashflow'},
+    {ok:s.pe<=20,txt:`KGV ${s.pe} (Ziel ≤20)`},
+    {ok:s.payout<=60,txt:`Payout-Ratio ${s.payout}% (≤60%)`},
+    {ok:s.buyback,txt:'Aktienrückkäufe'},
+    {ok:s.iv>=20&&s.iv<=50,txt:`IV ${s.iv}% (20–50%)`},
+    {ok:s.weeklies,txt:'Weekly-Optionen verfügbar'},
+    {ok:s.rsi<70,txt:`RSI ${s.rsi} (nicht überkauft)`},
+    {ok:s.macd,txt:'MACD-Signal positiv'},
+    {ok:(s.divStreak||0)>=10,warn:true,txt:`Dividend-Streak ${s.divStreak||0} Jahre`},
+    {ok:(s.fcfCoverage||0)>=1.2,warn:true,txt:`FCF-Deckung ${(s.fcfCoverage||0).toFixed(1)}× (Bonus-Kriterium)`},
+  ];
+  document.getElementById('detail-checklist').innerHTML=checks.map(c=>`
+    <div class="checklist-item">
+      <i class="ti ${c.ok?'ti-circle-check ci-ok':c.warn?'ti-info-circle ci-warn':'ti-x ci-fail'}"></i>
+      <span style="color:${c.ok?'var(--text)':'var(--text2)'}">${c.txt}</span>
+    </div>
+  `).join('');
+  window._sel=s;
+}
+
+// Direkter Sprung Screener → Optionskette
+function openChainFor(ticker, price){
+  document.getElementById('ch-sym').value = ticker;
+  document.getElementById('ch-src').value = 'finnhub';
+  showTab('chain');
+  setTimeout(()=>{ loadExpirations(); }, 100);
+}
+
+// Direkter Sprung Screener → Rechner
+function openCalcFor(ticker, price, iv){
+  showTab('calculator');
+  setTimeout(()=>{
+    document.getElementById('c-ticker').value = ticker;
+    document.getElementById('c-price').value  = price;
+    document.getElementById('c-strike').value = price;
+    document.getElementById('c-iv').value     = iv;
+    const ep = Math.round(price * iv/100 * Math.sqrt(30/365) * 100 / 2);
+    document.getElementById('c-prem').value   = ep;
+    calcPremium();
+  }, 100);
+}
+
+function sendToCalc(){
+  if(!window._sel) return;
+  const s=window._sel;
+  showTab('calculator');
+  setTimeout(()=>{
+    document.getElementById('c-ticker').value=s.t;
+    document.getElementById('c-price').value=s.price;
+    document.getElementById('c-strike').value=s.price;
+    document.getElementById('c-iv').value=s.iv;
+    document.getElementById('c-yield').value=(s.divYield||0).toFixed(1);
+    document.getElementById('c-div').value=((s.divYield||0)/100*s.price*100/4).toFixed(2);
+    const ep=Math.round(s.price*s.iv/100*Math.sqrt(30/365)*100/2);
+    document.getElementById('c-prem').value=ep;
+    calcPremium();
+  },100);
+}
+
+// ════════════════════════════════════════════
+// CALCULATOR
+// ════════════════════════════════════════════
+function setStrat(s){
+  currentStrat=s;
+  ['csp','cc','wheel'].forEach(x=>{
+    const el=document.getElementById('st-'+x);
+    el.style.background=x===s?'var(--green)':'';
+    el.style.color=x===s?'#fff':'';
+    el.style.borderColor=x===s?'var(--green)':'';
+  });
+  calcPremium();
+}
+
+function calcPremium(){
+  const price=+document.getElementById('c-price').value||0;
+  const strike=+document.getElementById('c-strike').value||0;
+  const prem=+document.getElementById('c-prem').value||0;
+  const days=+document.getElementById('c-days').value||30;
+  const cont=+document.getElementById('c-cont').value||1;
+  const entry=+document.getElementById('c-entry').value||price;
+  const iv=+document.getElementById('c-iv').value||0;
+  const divAnn=+document.getElementById('c-div').value||0;
+  const totalPrem=prem*cont;
+  // auto-compute yield display
+  if(price>0) document.getElementById('c-yield').value=((divAnn/(price)).toFixed(1));
+
+  let be, maxG, rendite, ann;
+  if(currentStrat==='cc'){
+    be=entry-prem/100;
+    maxG=((strike-entry)*100+prem)*cont;
+    rendite=prem/(entry*100-prem)*100;
+    ann=rendite/days*365;
+  } else {
+    be=strike-prem/100;
+    maxG=totalPrem;
+    rendite=prem/(strike*100-prem)*100;
+    ann=rendite/days*365;
+  }
+  const atm=Math.abs(price-strike)<0.5;
+  const divPerPeriod=divAnn/365*days;
+
+  document.getElementById('calc-results').innerHTML=`
+    <div class="rrow"><span class="rrow-label">Strategie</span><span class="rrow-val"><span class="badge ${currentStrat==='csp'?'b-green':currentStrat==='cc'?'b-blue':'b-amber'}">${currentStrat==='csp'?'Cash Secured Put':currentStrat==='cc'?'Covered Call':'Wheel (Ludwig)'}</span></span></div>
+    <div class="rrow"><span class="rrow-label">Gesamtprämie</span><span class="rrow-val pos">$${totalPrem.toFixed(0)}</span></div>
+    <div class="rrow"><span class="rrow-label">Gewinnschwelle</span><span class="rrow-val">$${be.toFixed(2)}</span></div>
+    <div class="rrow"><span class="rrow-label">Sicherheitspuffer</span><span class="rrow-val">${((price-be)/price*100).toFixed(1)}%</span></div>
+    <div class="rrow"><span class="rrow-label">Max. Gewinn (Option)</span><span class="rrow-val pos">$${maxG.toFixed(0)}</span></div>
+    <div class="rrow"><span class="rrow-label">Dividende (Periode)</span><span class="rrow-val pos">$${(divPerPeriod*100).toFixed(0)} ${divPerPeriod>0?'<span class="badge b-teal">+Bonus</span>':''}</span></div>
+    <div class="rrow"><span class="rrow-label">Gesamt-Ertrag</span><span class="rrow-val pos">$${(totalPrem+divPerPeriod*100).toFixed(0)}</span></div>
+    <div class="rrow"><span class="rrow-label">Rendite (${days}d)</span><span class="rrow-val pos">${rendite.toFixed(2)}%</span></div>
+    <div class="rrow"><span class="rrow-label">Annualisiert</span><span class="rrow-val ${ann>=15?'pos':ann>=8?'warn':'neg'}">${ann.toFixed(1)}% p.a.</span></div>
+    <div class="rrow"><span class="rrow-label">Position ATM?</span><span class="rrow-val ${atm?'pos':'warn'}">${atm?'Ja ✓ (Ludwig bevorzugt)':'Nein'}</span></div>
+    <div class="rrow"><span class="rrow-label">IV-Einschätzung</span><span class="rrow-val ${iv>=20&&iv<=50?'pos':iv<20?'neg':'warn'}">${iv<20?'Zu niedrig':iv>50?'Zu hoch — Vorsicht!':'Optimal (20–50%)'}</span></div>
+  `;
+
+  // Ludwig vs Dividend comparison
+  const annDiv=divAnn/price*100;
+  document.getElementById('scenarios').innerHTML=`
+    <div class="rrow"><span class="rrow-label">Aktie steigt (+10%)</span><span style="font-size:12px">Prämie kassiert ✓</span></div>
+    <div class="rrow"><span class="rrow-label">Seitwärts (±0%)</span><span style="font-size:12px">Max. Gewinn ✓</span></div>
+    <div class="rrow"><span class="rrow-label">Leicht fallend (–5%)</span><span style="font-size:12px">${price*0.95>be?'Teilgewinn möglich':'Roll-Signal → Stufe 1'}</span></div>
+    <div class="rrow"><span class="rrow-label">Unter Gewinnschwelle</span><span style="font-size:12px">Roll Stufe 1/2/3</span></div>
+    <div class="divider"></div>
+    <div style="font-size:11px;color:var(--text2);padding:.3rem 0">Ludwig-Prämie vs. Dividende (Kap. 2):</div>
+    <div class="rrow"><span class="rrow-label">Option (${days}d annualisiert)</span><span class="rrow-val pos">${ann.toFixed(1)}%</span></div>
+    <div class="rrow"><span class="rrow-label">Dividende (annualisiert)</span><span class="rrow-val">${annDiv.toFixed(1)}%</span></div>
+    <div class="rrow" style="border-bottom:none"><span class="rrow-label">Option-Vorteil</span><span class="rrow-val pos">+${(ann-annDiv).toFixed(1)}% p.a.</span></div>
+  `;
+
+  const rules=[
+    {ok:atm,txt:'ATM-Option (höchster Zeitwert)'},
+    {ok:days>=25&&days<=35,txt:`Laufzeit ${days}d (Ziel ~30d)`},
+    {ok:iv>=20&&iv<=50,txt:`IV ${iv}% (Ziel 20–50%)`},
+    {ok:rendite>=1,txt:`Rendite ${rendite.toFixed(2)}% (Ziel ≥1%/Monat)`},
+    {ok:ann>=15,txt:`Annualisiert ${ann.toFixed(1)}% (Ziel 15–25%)`},
+    {ok:price>=15&&price<=80,txt:'Kurs im Ludwig-Bereich ($15–$80)'},
+  ];
+  document.getElementById('rule-checks').innerHTML=rules.map(r=>`
+    <div class="checklist-item">
+      <i class="ti ${r.ok?'ti-circle-check ci-ok':'ti-alert-circle ci-warn'}"></i>
+      <span style="color:${r.ok?'var(--text)':'var(--text2)'}">${r.txt}</span>
+    </div>
+  `).join('');
+
+  renderPerfChart(price,strike,prem,days);
+}
+
+function renderPerfChart(price,strike,prem){
+  const ctx=document.getElementById('perfChart');
+  if(!ctx) return;
+  if(perfChartInst) perfChartInst.destroy();
+  const low=strike*0.72, high=strike*1.28, step=(high-low)/50;
+  const labels=[],data=[];
+  for(let p=low;p<=high;p+=step){
+    labels.push('$'+p.toFixed(0));
+    let pnl;
+    if(currentStrat==='cc'){
+      const e=+document.getElementById('c-entry').value||price;
+      pnl=p>=strike?(strike-e)*100+prem:prem-(e-p)*100;
+    } else {
+      pnl=p>=strike?prem:prem-(strike-p)*100;
+    }
+    data.push(pnl);
+  }
+  perfChartInst=new Chart(ctx,{
+    type:'line',
+    data:{labels,datasets:[
+      {label:'P&L ($)',data,borderColor:'#1D9E75',backgroundColor:'rgba(29,158,117,0.08)',borderWidth:2,pointRadius:0,tension:0.3,fill:true},
+      {label:'Break-even',data:labels.map(()=>0),borderColor:'rgba(150,150,150,0.35)',borderDash:[4,4],borderWidth:1,pointRadius:0},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{x:{display:false},y:{grid:{color:'rgba(128,128,128,0.08)'},ticks:{font:{size:10},color:'#888',callback:v=>'$'+v}}}}
+  });
+}
+
+// ════════════════════════════════════════════
+// ROLL MANAGER
+// ════════════════════════════════════════════
+function calcRoll(){
+  const os=+document.getElementById('r-strike').value||30;
+  const op=+document.getElementById('r-prem').value||100;
+  const cp=+document.getElementById('r-price').value||27;
+  const cput=+document.getElementById('r-put').value||3.10;
+  const rp=+document.getElementById('r-rolled').value||0;
+  const close=cput*100;
+  const iv=Math.max(0,os-cp);
+  const tv=cput-iv;
+  const net0=op+rp-close;
+
+  const s1s=Math.max(cp-1,os-2.5);
+  const s1p=Math.round(tv*100+Math.max(0,os-s1s)*100+close+15);
+  const s1net=s1p-close;
+  const s1be=s1s-s1net/100;
+
+  const s2p=Math.round(close+25);
+  const s2net=s2p-close;
+  const s2be=os-s2net/100;
+
+  const s3p=Math.round(s1p*2*0.87);
+  const s3net=s3p-close;
+  const s3be=s1s-s3net/200;
+
+  document.getElementById('roll-results').innerHTML=`
+    <div class="rrow"><span class="rrow-label">Status</span><span class="rrow-val ${cp<os?'neg':'pos'}">${cp<os?'Im Geld — Rollen!':'Aus dem Geld'}</span></div>
+    <div class="rrow"><span class="rrow-label">Schließungskosten</span><span class="rrow-val neg">–$${close.toFixed(0)}</span></div>
+    <div class="rrow"><span class="rrow-label">Innerer Wert</span><span class="rrow-val">$${iv.toFixed(2)}</span></div>
+    <div class="rrow"><span class="rrow-label">Zeitwert (verbleibend)</span><span class="rrow-val warn">$${tv.toFixed(2)} (bei Ausübung verloren!)</span></div>
+    <div class="divider"></div>
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin:.3rem 0">Stufe 1 — Strike $${s1s.toFixed(2)}, 30 Tage</div>
+    <div class="roll-box">
+      <div class="roll-row"><span>Neue Prämie (est.)</span><span class="pos">+$${s1p}</span></div>
+      <div class="roll-row"><span>Schließung</span><span class="neg">–$${close.toFixed(0)}</span></div>
+      <div class="roll-row roll-sum"><span>Netto</span><span class="${s1net>0?'pos':'neg'}">${s1net>0?'+':''}$${s1net.toFixed(0)}</span></div>
+      <div class="roll-row"><span>Neue Gewinnschwelle</span><span style="color:var(--amber)">$${s1be.toFixed(2)}</span></div>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin:.4rem 0 .3rem">Stufe 2 — Strike $${os}, 60 Tage</div>
+    <div class="roll-box">
+      <div class="roll-row"><span>Neue Prämie (est.)</span><span class="pos">+$${s2p}</span></div>
+      <div class="roll-row"><span>Schließung</span><span class="neg">–$${close.toFixed(0)}</span></div>
+      <div class="roll-row roll-sum"><span>Netto</span><span class="${s2net>0?'pos':'neg'}">${s2net>0?'+':''}$${s2net.toFixed(0)}</span></div>
+      <div class="roll-row"><span>Gewinnschwelle</span><span style="color:var(--amber)">$${s2be.toFixed(2)}</span></div>
+    </div>
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin:.4rem 0 .3rem">Stufe 3 — Strike $${s1s.toFixed(2)}, 2× Kontrakte</div>
+    <div class="roll-box">
+      <div class="roll-row"><span>Neue Prämie (2 Kont.)</span><span class="pos">+$${s3p}</span></div>
+      <div class="roll-row"><span>Schließung</span><span class="neg">–$${close.toFixed(0)}</span></div>
+      <div class="roll-row roll-sum"><span>Netto</span><span class="${s3net>0?'pos':'neg'}">${s3net>0?'+':''}$${s3net.toFixed(0)}</span></div>
+      <div class="roll-row"><span>Gewinnschwelle (2K)</span><span style="color:var(--amber)">$${s3be.toFixed(2)}</span></div>
+    </div>
+  `;
+  document.getElementById('be-track').innerHTML=`
+    <div class="roll-box">
+      <div class="roll-row"><span>Ursprüngliche Prämie</span><span class="pos">+$${op}</span></div>
+      <div class="roll-row"><span>Bisher gerollt</span><span class="pos">+$${rp}</span></div>
+      <div class="roll-row"><span>Aktuelle Schließung</span><span class="neg">–$${close.toFixed(0)}</span></div>
+      <div class="roll-row roll-sum"><span>Netto vor Roll</span><span class="${net0>0?'pos':'neg'}">${net0>0?'+':''}$${net0.toFixed(0)}</span></div>
+      <div style="height:.5px;background:var(--border);margin:.4rem 0"></div>
+      <div class="roll-row"><span style="font-weight:600">Gewinnschwelle (S1)</span><span style="font-weight:600;color:var(--amber)">$${s1be.toFixed(2)}</span></div>
+      <div class="roll-row"><span>Ursprüngliche Gewinnschwelle</span><span>$${(os-op/100).toFixed(2)}</span></div>
+      <div class="roll-row"><span>Verbesserung</span><span class="pos">$${((os-op/100)-s1be).toFixed(2)}</span></div>
+    </div>
+  `;
+}
+
+function calcAsymCC(){
+  const sh=+document.getElementById('acc-sh').value||200;
+  const atm=+document.getElementById('acc-atm').value||150;
+  const otm=+document.getElementById('acc-otm').value||40;
+  const trad=otm*2;
+  const adv=atm-trad;
+  document.getElementById('acc-results').innerHTML=`
+    <div class="divider"></div>
+    <div class="rrow"><span class="rrow-label">1× ATM Call</span><span class="rrow-val pos">$${atm}</span></div>
+    <div class="rrow"><span class="rrow-label">2× OTM Calls</span><span class="rrow-val neg">$${trad}</span></div>
+    <div class="rrow"><span class="rrow-label">Ludwig-Vorteil</span><span class="rrow-val pos">+$${adv} (${(atm/trad).toFixed(1)}× mehr)</span></div>
+    <div class="rrow"><span class="rrow-label">Ungeschützte Aktien</span><span class="rrow-val">${sh/2} (Aufwärtspotenzial erhalten)</span></div>
+  `;
+}
+
+// ════════════════════════════════════════════
+// JOURNAL
+// ════════════════════════════════════════════
+// ── Journal Export/Import/Persistence ──────────────────────
+const JOURNAL_KEY = 'premium_options_journal';
+
+function saveJournalToStorage(){
+  try { localStorage.setItem(JOURNAL_KEY, JSON.stringify(journalEntries)); } catch(e){}
+}
+
+function loadJournalFromStorage(){
+  try {
+    const raw = localStorage.getItem(JOURNAL_KEY);
+    if(raw) journalEntries = JSON.parse(raw);
+  } catch(e){}
+}
+
+function exportJournal(){
+  const data = {
+    version: 1,
+    exportDate: new Date().toISOString().slice(0,10),
+    entries: journalEntries
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `premium-options-journal-${data.exportDate}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  document.getElementById('journal-sync-msg').innerHTML =
+    '<span class="badge b-green">✓ Exportiert — in iCloud/Dropbox/Google Drive speichern</span>';
+}
+
+function importJournal(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      const entries = data.entries || data; // support both formats
+      if(!Array.isArray(entries)) throw new Error('Ungültiges Format');
+      const merge = confirm(`${entries.length} Einträge gefunden.\nOK = zusammenführen (bestehende behalten)\nAbbrechen = ersetzen`);
+      if(merge){
+        // Deduplizieren nach ticker+open+strike
+        const existing = new Set(journalEntries.map(e=>`${e.ticker}|${e.open}|${e.strike}`));
+        const newEntries = entries.filter(e=>!existing.has(`${e.ticker}|${e.open}|${e.strike}`));
+        journalEntries = [...journalEntries, ...newEntries];
+        document.getElementById('journal-sync-msg').innerHTML =
+          `<span class="badge b-green">✓ ${newEntries.length} neue Einträge zusammengeführt</span>`;
+      } else {
+        journalEntries = entries;
+        document.getElementById('journal-sync-msg').innerHTML =
+          `<span class="badge b-green">✓ ${entries.length} Einträge importiert</span>`;
+      }
+      saveJournalToStorage();
+      renderJournal();
+    } catch(err) {
+      document.getElementById('journal-sync-msg').innerHTML =
+        `<span class="badge b-red">Fehler: ${err.message}</span>`;
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = ''; // reset so same file can be re-imported
+}
+
+function deleteJournalEntry(i){
+  journalEntries.splice(i,1);
+  saveJournalToStorage();
+  renderJournal();
+}
+function clearJournal(){
+  if(confirm('Alle Journal-Einträge löschen?')){
+    journalEntries=[];
+    saveJournalToStorage();
+    renderJournal();
+  }
+}
+function addJournal(){
+  const e={
+    ticker:document.getElementById('j-tick').value||'?',
+    strat:document.getElementById('j-strat').value,
+    strike:+document.getElementById('j-strike').value||0,
+    prem:+document.getElementById('j-prem').value||0,
+    open:document.getElementById('j-open').value,
+    exp:document.getElementById('j-exp').value,
+    cont:+document.getElementById('j-cont').value||1,
+    status:document.getElementById('j-status').value,
+    notes:document.getElementById('j-notes').value,
+  };
+  journalEntries.unshift(e);
+  saveJournalToStorage();
+  renderJournal();
+}
+
+function renderJournal(){
+  const open=journalEntries.filter(e=>e.status==='Offen').length;
+  const wins=journalEntries.filter(e=>e.status==='Gewinn').length;
+  const closed=journalEntries.filter(e=>e.status!=='Offen').length;
+  const totalPrem=journalEntries.reduce((s,e)=>s+e.prem*e.cont,0);
+  const avgR=journalEntries.reduce((s,e)=>s+(e.prem/(e.strike*100-e.prem)*100),0)/Math.max(1,journalEntries.length);
+  document.getElementById('jm-open').textContent=open;
+  document.getElementById('jm-prem').textContent='$'+totalPrem;
+  document.getElementById('jm-wr').textContent=closed?Math.round(wins/closed*100)+'%':'–';
+  document.getElementById('jm-avg').textContent=avgR.toFixed(1)+'%';
+  const col={Offen:'b-blue',Gewinn:'b-green',Gerollt:'b-amber',Angedient:'b-amber',Verlust:'b-red'};
+  const bord={Gewinn:'',Verlust:'je-red',Gerollt:'je-amber',Angedient:'je-amber'};
+  document.getElementById('journal-list').innerHTML=journalEntries.map((e,i)=>`
+    <div class="journal-entry ${bord[e.status]||''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+        <div style="font-weight:600;font-size:13px">${e.ticker} — ${e.strat} @ $${e.strike} (${e.cont}×)</div>
+        <div style="display:flex;gap:.4rem;align-items:center">
+          <span class="badge ${col[e.status]||'b-gray'}">${e.status}</span>
+          <button class="btn xs" onclick="deleteJournalEntry(${i})" style="color:var(--red);padding:1px 5px"><i class="ti ti-x"></i></button>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text2)">Prämie: <strong>$${e.prem*e.cont}</strong> · ${e.open}→${e.exp}${e.notes?' · '+e.notes:''}</div>
+    </div>
+  `).join('');
+}
+
+function calcReturn(){
+  const cap=+document.getElementById('rb-cap').value||30000;
+  const mo=+document.getElementById('rb-mo').value||450;
+  const mr=mo/cap*100;
+  const ann=mr*12;
+  document.getElementById('return-calc').innerHTML=`
+    <div class="rrow"><span class="rrow-label">Monatlich</span><span class="rrow-val ${mr>=1?'pos':'warn'}">${mr.toFixed(2)}%</span></div>
+    <div class="rrow"><span class="rrow-label">Jährlich</span><span class="rrow-val ${ann>=15?'pos':ann>=10?'warn':'neg'}">${ann.toFixed(1)}% p.a.</span></div>
+    <div class="rrow"><span class="rrow-label">Ludwig-Ziel (15–25%)</span><span class="rrow-val ${ann>=15&&ann<=25?'pos':'warn'}">${ann>=15&&ann<=25?'Erreicht ✓':ann<15?'Prämie erhöhen':'Über Ziel — prüfen'}</span></div>
+    <div class="rrow"><span class="rrow-label">Kapital nach 1 Jahr</span><span class="rrow-val pos">$${Math.round(cap*(1+ann/100)).toLocaleString()}</span></div>
+    <div class="rrow"><span class="rrow-label">Kapital nach 5 Jahren</span><span class="rrow-val pos">$${Math.round(cap*Math.pow(1+ann/100,5)).toLocaleString()}</span></div>
+  `;
+}
+
+// ════════════════════════════════════════════
+// MARKET
+// ════════════════════════════════════════════
+function renderHotList(){
+  const top=STOCKS.map(s=>({...s,score:ludwigScore(s)})).sort((a,b)=>b.score-a.score).slice(0,5);
+  document.getElementById('hot-list').innerHTML=top.map(s=>{
+    const ep=Math.round(s.price*s.iv/100*Math.sqrt(30/365)*100/2);
+    const sec=divSecurityScore(s);
+    return `
+      <div style="padding:.55rem .75rem;border-bottom:.5px solid var(--border);font-size:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+          <strong style="font-size:13px">${s.t}</strong>
+          <span class="badge ${s.score>=8?'b-green':'b-amber'}">${s.score.toFixed(1)}/10</span>
+        </div>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap;color:var(--text2)">
+          <span>$${s.price}</span><span>IV ${s.iv}%</span>
+          <span>Prämie ~$${ep}</span>
+          <span class="badge ${s.divYield>0?'b-teal':'b-gray'}">Div ${(s.divYield||0).toFixed(1)}%</span>
+          <span class="badge ${sec.total>=7?'b-green':sec.total>=4?'b-amber':'b-gray'}">Sec ${sec.total}/10</span>
+          ${s.divStreak>=25?'<span class="badge b-teal">Aristocrat</span>':''}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function renderIVChart(){
+  const ctx=document.getElementById('ivChart');
+  if(!ctx) return;
+  if(ivChartInst) ivChartInst.destroy();
+  const data=STOCKS.slice(0,8);
+  ivChartInst=new Chart(ctx,{
+    type:'bar',
+    data:{
+      labels:data.map(s=>s.t),
+      datasets:[{
+        label:'IV (%)',
+        data:data.map(s=>s.iv),
+        backgroundColor:data.map(s=>s.iv<20?'#E24B4A':s.iv>50?'#BA7517':'#1D9E75'),
+        borderRadius:4,
+      }]
+    },
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{font:{size:11},color:'#888'}},
+        y:{min:0,max:70,ticks:{font:{size:10},color:'#888',callback:v=>v+'%'},grid:{color:'rgba(128,128,128,0.08)'}},
+      }}
+  });
+}
+
+
+
+// ════════════════════════════════════════════
+// EXPIRY DATES: nächste 12 dritte Freitage
+// ════════════════════════════════════════════
+function getThirdFridays(n=12){
+  const results=[];
+  const now=new Date();
+  let year=now.getFullYear();
+  let month=now.getMonth(); // 0-based
+  while(results.length<n){
+    // Find third Friday of this month
+    const d=new Date(year,month,1);
+    let fridays=0;
+    while(fridays<3){
+      if(d.getDay()===5) fridays++;
+      if(fridays<3) d.setDate(d.getDate()+1);
+    }
+    const iso=d.toISOString().slice(0,10);
+    const daysAway=Math.round((d-now)/(1000*60*60*24));
+    if(daysAway>0) results.push(iso);
+    month++;
+    if(month>11){month=0;year++;}
+  }
+  return results.slice(0,n);
+}
+
+// DTE berechnen
+function getDTE(expDateStr){
+  return Math.max(1,Math.round((new Date(expDateStr+'T20:00:00Z')-new Date())/(1000*60*60*24)));
+}
+
+function safeNum(v, decimals=2){ 
+  if(v===null||v===undefined||isNaN(v)||!isFinite(v)) return 0; 
+  return +parseFloat(v).toFixed(decimals); 
+}
+// ════════════════════════════════════════════
+// BLACK-SCHOLES (für Delta-Berechnung wenn Yahoo keine Greeks liefert)
+// ════════════════════════════════════════════
+function bsNorm(x){
+  const a=[0.319381530,-0.356563782,1.781477937,-1.821255978,1.330274429];
+  const k=1/(1+0.2316419*Math.abs(x));
+  let poly=0; let kn=k;
+  a.forEach(ai=>{poly+=ai*kn;kn*=k;});
+  const n=Math.exp(-x*x/2)/Math.sqrt(2*Math.PI)*poly;
+  return x>=0?1-n:n;
+}
+function bsDelta(S,K,T,r,sigma,type){
+  if(T<=0||sigma<=0) return type==='call'?1:0;
+  const d1=(Math.log(S/K)+(r+sigma*sigma/2)*T)/(sigma*Math.sqrt(T));
+  return type==='call'?bsNorm(d1):bsNorm(d1)-1;
+}
+
+// ════════════════════════════════════════════
+// LIVE CHAIN
+// ════════════════════════════════════════════
+function updDelta(){
+  document.getElementById('d-min-v').textContent=(+document.getElementById('d-min').value).toFixed(2);
+  document.getElementById('d-max-v').textContent=(+document.getElementById('d-max').value).toFixed(2);
+}
+function setDelta(mn,mx){
+  document.getElementById('d-min').value=mn;
+  document.getElementById('d-max').value=mx;
+  updDelta(); filterChain();
+}
+function onSrcChange(){
+  const src=document.getElementById('ch-src').value;
+  if(src==='demo') loadDemoChain(document.getElementById('ch-sym').value||'AAPL');
+}
+
+function getProxy(){
+  return localStorage.getItem('tradier_key')||'https://my-cors-proxy.ahildebrand.workers.dev';
+}
+function proxyUrl(url){
+  return getProxy()+'/?url='+encodeURIComponent(url);
+}
+// Legacy shims
+function getHeaders(){ return {'Accept':'application/json'}; }
+function getBase(){ return ''; }
+
+async function loadExpirations(){
+  const sym=document.getElementById('ch-sym').value.trim().toUpperCase();
+  const src=document.getElementById('ch-src').value;
+  if(!sym) return;
+  if(src==='demo'){ loadDemoChain(sym); return; }
+  document.getElementById('expiry-chips').innerHTML='<span class="spinner"></span>';
+  try{
+    let exps=[];
+    if(src==='finnhub'){
+      // Verfallsdaten: nächste 12 dritte Freitage (standard US equity options)
+      exps = getThirdFridays(12);
+    } else {
+      const pu=(document.getElementById('proxy-url')?.value||'http://localhost:5001').replace(/\/$/,'');
+      const r=await fetch(`${pu}/expirations/${sym}`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'}});
+      if(!r.ok) throw new Error('IBKR Proxy HTTP '+r.status);
+      const d=await r.json();
+      exps=d.expirations||getThirdFridays(12);
+    }
+    renderExpiryChips(exps,sym);
+  } catch(e){
+    document.getElementById('expiry-chips').innerHTML=`<span style="color:var(--red);font-size:12px">Fehler: ${e.message} — </span><button class="btn xs" onclick="document.getElementById('ch-src').value='demo';loadDemoChain('${sym}')">Demo laden</button>`;
+  }
+}
+
+function renderExpiryChips(exps,sym){
+  const el=document.getElementById('expiry-chips');
+  el.innerHTML=exps.map((e,i)=>{
+    const d=new Date(e+'T12:00:00');
+    const days=Math.round((d-new Date())/(86400000));
+    const is3f=d.getDay()===5&&Math.ceil(d.getDate()/7)===3;
+    return `<span class="expiry-chip ${i===0?'sel':''}" onclick="selExp('${e}','${sym}',this)">${e.slice(5)} <small>${days}d${is3f?' ⭐':''}</small></span>`;
+  }).join('');
+  if(exps.length) selExp(exps[0],sym,null);
+}
+
+function selExp(exp,sym,el){
+  selectedExpiry=exp;
+  document.querySelectorAll('.expiry-chip').forEach(e=>e.classList.remove('sel'));
+  if(el) el.classList.add('sel');
+  loadChain(sym,exp);
+}
+
+async function loadChain(sym,exp){
+  const src=document.getElementById('ch-src').value;
+  if(src==='demo'){ loadDemoChain(sym); return; }
+  document.getElementById('chain-table').innerHTML='<span class="spinner"></span> Lade Optionskette...';
+  try{
+    let opts=[];
+    if(src==='finnhub'){
+      // ── Schritt 1: Echten Kurs von Finnhub holen ──
+      const fhKey=localStorage.getItem('finnhub_key')||localStorage.getItem('fh_key')||'';
+      if(!fhKey) throw new Error('Kein Finnhub-Key — bitte in Einstellungen eintragen');
+      const qr=await fetch(proxyUrl(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${fhKey}`));
+      if(!qr.ok) throw new Error('Finnhub Quote HTTP '+qr.status);
+      const qd=await qr.json();
+      if(qd.c>0){
+        stockPrice=qd.c;
+        document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2);
+      }
+
+      // ── Schritt 2: Strikes generieren (ITM bis OTM, $2.50 Schritte) ──
+      const dte=getDTE(exp);
+      const T=dte/365;
+      const r_=0.045;
+      // IV-Schätzung: historische Näherung basierend auf Kurs
+      // (reale IV liegt typisch 20-45% für große US-Aktien)
+      const baseIV = stockPrice > 500 ? 0.28 : stockPrice > 200 ? 0.30 : stockPrice > 100 ? 0.32 : 0.35;
+
+      // Strike-Range: -25% bis +15% vom Kurs, in $2.50-Schritten
+      const step = stockPrice > 400 ? 5 : stockPrice > 150 ? 2.5 : 1;
+      const minStrike = Math.round(stockPrice * 0.75 / step) * step;
+      const maxStrike = Math.round(stockPrice * 1.15 / step) * step;
+      const chainType=document.getElementById('ch-type').value;
+
+      opts=[];
+      for(let strike=minStrike; strike<=maxStrike; strike+=step){
+        // IV-Skew: OTM puts haben höhere IV (volatility skew)
+        const moneyness = strike/stockPrice;
+        const skew = moneyness < 1 ? (1-moneyness)*0.3 : (moneyness-1)*0.1;
+        const iv = Math.max(0.15, Math.min(0.80, baseIV + skew));
+
+        // Black-Scholes Preis + Delta
+        const putDelta = bsDelta(stockPrice, strike, T, r_, iv, 'put');
+        const callDelta = bsDelta(stockPrice, strike, T, r_, iv, 'call');
+
+        // BS-Preis berechnen
+        function bsPrice(S,K,t,r,sigma,type){
+          if(t<=0) return Math.max(0,type==='call'?S-K:K-S);
+          const d1=(Math.log(S/K)+(r+sigma*sigma/2)*t)/(sigma*Math.sqrt(t));
+          const d2=d1-sigma*Math.sqrt(t);
+          if(type==='call') return S*bsNorm(d1)-K*Math.exp(-r*t)*bsNorm(d2);
+          return K*Math.exp(-r*t)*bsNorm(-d2)-S*bsNorm(-d1);
+        }
+
+        const putPrice = bsPrice(stockPrice,strike,T,r_,iv,'put');
+        const callPrice = bsPrice(stockPrice,strike,T,r_,iv,'call');
+
+        // Typischer Spread: 2-5% des Preises
+        const putSpread = Math.max(0.05, putPrice * 0.03);
+        const callSpread = Math.max(0.05, callPrice * 0.03);
+
+        // OI: grobe Schätzung — ATM höher
+        const distATM = Math.abs(strike - stockPrice)/stockPrice;
+        const oi = Math.round(Math.max(100, 5000 * Math.exp(-distATM*15) + Math.random()*500));
+
+        if(chainType!=='call'){
+          opts.push({
+            option_type:'put', strike,
+            bid: Math.max(0.01, putPrice-putSpread/2),
+            ask: putPrice+putSpread/2,
+            last: putPrice,
+            open_interest: oi,
+            greeks:{ delta: putDelta, mid_iv: iv, theta: -(putPrice*0.015/dte), gamma: 0 }
+          });
+        }
+        if(chainType!=='put' && chainType!=='Put (CSP)'){
+          opts.push({
+            option_type:'call', strike,
+            bid: Math.max(0.01, callPrice-callSpread/2),
+            ask: callPrice+callSpread/2,
+            last: callPrice,
+            open_interest: oi,
+            greeks:{ delta: callDelta, mid_iv: iv, theta: -(callPrice*0.015/dte), gamma: 0 }
+          });
+        }
+      }
+    } else {
+      // IBKR Proxy
+      const pu=(document.getElementById('proxy-url')?.value||'http://localhost:5001').replace(/\/$/,'');
+      const chainType=document.getElementById('ch-type').value;
+      const optType=chainType==='Put (CSP)'?'put':chainType==='Call (CC)'?'call':'all';
+      // Quote
+      const qr=await fetch(`${pu}/quote/${sym}`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'}});
+      const qd=await qr.json();
+      if(qd.price>0){ stockPrice=qd.price; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
+      // Chain
+      const r=await fetch(`${pu}/chain/${sym}/${exp}?type=${optType}`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'}});
+      if(!r.ok) throw new Error('IBKR Proxy HTTP '+r.status);
+      const d=await r.json();
+      if(d.stock_price>0&&!isNaN(d.stock_price)){ stockPrice=d.stock_price; document.getElementById('sn-price').textContent='$'+stockPrice.toFixed(2); }
+      opts=(d.options||[]).map(o=>({
+        ...o,
+        bid: isNaN(o.bid)||o.bid==null ? 0 : o.bid,
+        ask: isNaN(o.ask)||o.ask==null ? 0 : o.ask,
+        last: isNaN(o.last)||o.last==null ? 0 : o.last,
+        mid: isNaN(o.mid)||o.mid==null ? ((o.bid||0)+(o.ask||0))/2 : o.mid,
+        open_interest: isNaN(o.open_interest)||o.open_interest==null ? 0 : o.open_interest,
+        greeks: {
+          delta: isNaN(o.greeks?.delta) ? 0 : (o.greeks?.delta||0),
+          mid_iv: isNaN(o.greeks?.mid_iv) ? 0 : (o.greeks?.mid_iv||0),
+          gamma: isNaN(o.greeks?.gamma) ? 0 : (o.greeks?.gamma||0),
+          theta: isNaN(o.greeks?.theta) ? 0 : (o.greeks?.theta||0),
+        }
+      }));
+    }
+    chainData=opts;
+    filterChain();
+  } catch(e){
+    document.getElementById('chain-table').innerHTML=`<div class="alert err"><i class="ti ti-alert-circle"></i><div>${e.message} — <button class="btn xs" onclick="document.getElementById('ch-src').value='demo';loadDemoChain('${sym}')">Demo</button></div></div>`;
+  }
+}
+
+function filterChain(){
+  const dmin=+document.getElementById('d-min').value;
+  const dmax=+document.getElementById('d-max').value;
+  const oiMin=+document.getElementById('ch-oi').value;
+  const ivMax=+document.getElementById('ch-iv').value;
+  const ot=document.getElementById('ch-type').value;
+  const filtered=chainData.filter(o=>{
+    if(ot!=='both'&&o.option_type!==ot) return false;
+    if((o.open_interest||0)<oiMin) return false;
+    const iv=(o.greeks?.mid_iv||0)*100;
+    if(iv>ivMax&&iv>0) return false;
+    const d=Math.abs(o.greeks?.delta||0);
+    return d>=dmin&&d<=dmax;
+  });
+  renderChainTable(chainData, filtered, dmin, dmax);
+  renderChainRecommend(filtered);
+}
+
+function renderChainTable(all, filtered, dmin, dmax){
+  const ot=document.getElementById('ch-type').value;
+  const showP=ot==='put'||ot==='both';
+  const showC=ot==='call'||ot==='both';
+  const puts=all.filter(o=>o.option_type==='put');
+  const calls=all.filter(o=>o.option_type==='call');
+  const strikes=[...new Set([...puts,...calls].map(o=>o.strike))].sort((a,b)=>a-b);
+  const pm=Object.fromEntries(puts.map(o=>[o.strike,o]));
+  const cm=Object.fromEntries(calls.map(o=>[o.strike,o]));
+  const fset=new Set(filtered.map(o=>o.strike));
+  const ludwigSet=new Set(filtered.filter(o=>Math.abs(o.greeks?.delta||0)>=0.45).map(o=>o.strike));
+  const atm=strikes.reduce((b,s)=>Math.abs(s-stockPrice)<Math.abs(b-stockPrice)?s:b, strikes[0]||0);
+
+  const fmt=v=>v>0?v.toFixed(2):'–';
+  const fmtD=d=>{const v=Math.abs(d||0);return`<span class="delta-badge" style="background:${v>=0.45?'var(--green-light)':v>=0.30?'var(--blue-light)':'var(--bg3)'};color:${v>=0.45?'#3B6D11':v>=0.30?'var(--blue)':'var(--text2)'}">${v.toFixed(2)}</span>`};
+  const fmtIV=v=>v>0?(v*100).toFixed(1)+'%':'–';
+  const fmtOI=v=>v?(+v).toLocaleString():'–';
+
+  const rows=strikes.map(s=>{
+    const p=pm[s], c=cm[s];
+    const isLud=ludwigSet.has(s);
+    const isAtm=s===atm;
+    const inRange=fset.has(s);
+    const cls=isLud?'ludwig-row':isAtm?'atm-row':inRange?'range-row':'';
+    const mark=isLud?'⭐ ':isAtm?'➤ ':'';
+    const pCells=showP?`<td>${p?fmt(p.bid):'–'}</td><td>${p?fmt(p.ask):'–'}</td><td>${p?fmtD(p.greeks?.delta):'–'}</td><td>${p?fmtIV(p.greeks?.mid_iv):'–'}</td><td>${p?fmtOI(p.open_interest):'–'}</td>`:'';
+    const cCells=showC?`<td>${c?fmt(c.bid):'–'}</td><td>${c?fmt(c.ask):'–'}</td><td>${c?fmtD(c.greeks?.delta):'–'}</td><td>${c?fmtIV(c.greeks?.mid_iv):'–'}</td><td>${c?fmtOI(c.open_interest):'–'}</td>`:'';
+    return `<tr class="${cls}">${pCells}<td class="strike-col">${mark}$${s}</td>${cCells}</tr>`;
+  }).join('');
+
+  const pH=showP?`<th class="puts-h" colspan="5" style="text-align:center">PUTS</th>`:'';
+  const cH=showC?`<th class="calls-h" colspan="5" style="text-align:center">CALLS</th>`:'';
+  const pSub=showP?`<th class="puts-h r">Bid</th><th class="puts-h r">Ask</th><th class="puts-h r">δ</th><th class="puts-h r">IV</th><th class="puts-h r">OI</th>`:'';
+  const cSub=showC?`<th class="calls-h r">Bid</th><th class="calls-h r">Ask</th><th class="calls-h r">δ</th><th class="calls-h r">IV</th><th class="calls-h r">OI</th>`:'';
+
+  document.getElementById('chain-table').innerHTML=`
+    <table>
+      <thead>
+        <tr>${pH}<th style="background:var(--bg3)">Strike</th>${cH}</tr>
+        <tr>${pSub}<th style="background:var(--bg3)">$</th>${cSub}</tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function renderChainRecommend(filtered){
+  const puts=filtered.filter(o=>o.option_type==='put');
+  if(!puts.length){document.getElementById('ch-recommend').innerHTML='<span style="font-size:12px;color:var(--text2)">Keine Puts im Delta-Bereich</span>';return;}
+  const best=puts.sort((a,b)=>Math.abs(Math.abs(a.greeks?.delta||0)-0.48)-Math.abs(Math.abs(b.greeks?.delta||0)-0.48))[0];
+  const mid=best.bid&&best.ask?(best.bid+best.ask)/2:best.last||0;
+  const rend=(mid/(best.strike*100-mid)*100);
+  const ann=(rend/30*365);
+  const d=Math.abs(best.greeks?.delta||0);
+  document.getElementById('sn-atm').textContent='$'+best.strike;
+  document.getElementById('sn-prem').textContent='~$'+mid.toFixed(0);
+  document.getElementById('sn-iv').textContent=((best.greeks?.mid_iv||0)*100).toFixed(0)+'%';
+  document.getElementById('ch-recommend').innerHTML=`
+    <div style="background:var(--bg3);border-radius:var(--r);padding:.65rem .85rem">
+      <div style="font-weight:600;font-size:13px;color:var(--green);margin-bottom:.4rem">⭐ $${best.strike} Put — δ ${d.toFixed(2)}</div>
+      <div class="rrow"><span class="rrow-label">Mid-Prämie</span><span class="pos"><strong>$${mid.toFixed(0)}</strong></span></div>
+      <div class="rrow"><span class="rrow-label">Gewinnschwelle</span><span>$${(best.strike-mid/100).toFixed(2)}</span></div>
+      <div class="rrow"><span class="rrow-label">Rendite (30d)</span><span class="pos">${rend.toFixed(2)}%</span></div>
+      <div class="rrow"><span class="rrow-label">Annualisiert</span><span class="${ann>=15?'pos':'warn'}">${ann.toFixed(1)}% p.a.</span></div>
+      <div class="rrow" style="border-bottom:none"><span class="rrow-label">OI</span><span>${(best.open_interest||0).toLocaleString()}</span></div>
+    </div>
+  `;
+}
+
+function loadDemoChain(sym){
+  const priceMap={'AAPL':172.5,'MSFT':415.0,'MRK':55.8,'JNJ':155.2,'PG':172.3,'KO':63.4};
+  const pr=priceMap[sym]||50;
+  stockPrice=pr;
+  document.getElementById('sn-price').textContent='$'+pr.toFixed(2);
+  const exps=[14,21,30,45,60,90].map(d=>{
+    const dt=new Date(); dt.setDate(dt.getDate()+d);
+    return dt.toISOString().slice(0,10);
+  });
+  document.getElementById('expiry-chips').innerHTML=exps.map((e,i)=>{
+    const d=new Date(e+'T12:00:00');
+    const days=Math.round((d-new Date())/86400000);
+    const is3f=d.getDay()===5&&Math.ceil(d.getDate()/7)===3;
+    return `<span class="expiry-chip ${i===2?'sel':''}" onclick="selExp('${e}','${sym}',this)">${e.slice(5)} <small>${days}d${is3f?' ⭐':''}</small></span>`;
+  }).join('');
+  selectedExpiry=exps[2];
+  const opts=[];
+  const IV=0.28;
+  for(let i=-8;i<=8;i++){
+    const s=Math.round((pr+i*2.5)*4)/4;
+    const mn=(pr-s)/pr;
+    const pd=Math.min(0.98,Math.max(0.02,0.5+mn*2.5));
+    const cd=1-pd;
+    const adj=IV+Math.abs(mn)*0.1;
+    const dt=30/365;
+    const pp=Math.max(0.05,pr*adj*Math.sqrt(dt)*pd*0.9);
+    const cp=Math.max(0.05,pr*adj*Math.sqrt(dt)*cd*0.9);
+    opts.push({option_type:'put',strike:s,bid:+(pp*0.95).toFixed(2),ask:+(pp*1.05).toFixed(2),last:+pp.toFixed(2),open_interest:Math.round(300+Math.random()*4000),greeks:{delta:-pd,mid_iv:+(adj+Math.random()*0.02).toFixed(3),theta:-(pp*0.02).toFixed(4),gamma:0.04}});
+    opts.push({option_type:'call',strike:s,bid:+(cp*0.95).toFixed(2),ask:+(cp*1.05).toFixed(2),last:+cp.toFixed(2),open_interest:Math.round(300+Math.random()*3000),greeks:{delta:+cd.toFixed(3),mid_iv:+(adj+Math.random()*0.02).toFixed(3),theta:-(cp*0.018).toFixed(4),gamma:0.04}});
+  }
+  chainData=opts;
+  filterChain();
+}
+
+// ════════════════════════════════════════════
+// SETTINGS
+// ════════════════════════════════════════════
+function saveIBKRSettings(){
+  localStorage.setItem('ibkr_api_url', document.getElementById('ibkr-api-url').value);
+  localStorage.setItem('ibkr_token',   document.getElementById('ibkr-token').value);
+  document.getElementById('ibkr-test-result').innerHTML='<span class="badge b-green">Gespeichert ✓</span>';
+}
+
+async function testIBKRWebAPI(){
+  const url   = document.getElementById('ibkr-api-url').value || 'https://localhost:5000/v1/api';
+  const token = document.getElementById('ibkr-token').value;
+  const el    = document.getElementById('ibkr-test-result');
+  el.innerHTML = '<span class="spinner"></span>';
+  try {
+    const headers = token ? {'Authorization':'Bearer '+token} : {};
+    const r = await fetch(`${url}/iserver/auth/status`, {headers, signal:AbortSignal.timeout(4000)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+    el.innerHTML = `<div class="alert ok"><i class="ti ti-check"></i><div>IBKR Web API verbunden! Authenticated: ${d.authenticated}</div></div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="alert err"><i class="ti ti-alert-circle"></i><div>${e.message}<br><small>TWS → Konfiguration → API → Web API aktivieren</small></div></div>`;
+  }
+}
+function toggleFhKey(){
+  const i=document.getElementById('fh-key-settings');
+  const ic=document.getElementById('fh-eye');
+  i.type=i.type==='password'?'text':'password';
+  ic.className=i.type==='text'?'ti ti-eye-off':'ti ti-eye';
+}
+function saveFhKey(){
+  const k=document.getElementById('fh-key-settings').value.trim();
+  localStorage.setItem('finnhub_key',k);
+  // Sync to screener inline field
+  document.getElementById('fh-key').value=k;
+  document.getElementById('fh-key-result').innerHTML='<span class="badge b-green">Gespeichert ✓</span>';
+  document.getElementById('fh-key-status').innerHTML='<span class="badge b-green">Key vorhanden</span>';
+}
+async function testFhKey(){
+  const k=document.getElementById('fh-key-settings').value.trim()||localStorage.getItem('finnhub_key')||'';
+  const el=document.getElementById('fh-key-result');
+  if(!k){el.innerHTML='<div class="alert err"><i class="ti ti-x"></i><div>Kein Key eingegeben</div></div>';return;}
+  el.innerHTML='<span class="spinner"></span>';
+  try{
+    const r=await fetch(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${k}`);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>Key gültig! AAPL: $${(d.c||0).toFixed(2)}</div></div>`;
+    localStorage.setItem('finnhub_key',k);
+    document.getElementById('fh-key').value=k;
+    document.getElementById('fh-key-status').innerHTML='<span class="badge b-green">✓ Aktiv</span>';
+  }catch(ex){
+    el.innerHTML=`<div class="alert err"><i class="ti ti-x"></i><div>${ex.message}</div></div>`;
+  }
+}
+function toggleKey(){
+  const i=document.getElementById('api-key');
+  const ic=document.getElementById('eye-icon');
+  i.type=i.type==='password'?'text':'password';
+  ic.className=i.type==='text'?'ti ti-eye-off':'ti ti-eye';
+}
+function saveKey(){
+  localStorage.setItem('tradier_key',document.getElementById('api-key').value);
+  document.getElementById('key-result').innerHTML='<span class="badge b-green">Proxy-URL gespeichert ✓</span>';
+}
+async function testKey(){
+  const proxy=document.getElementById('api-key').value.trim()||'https://my-cors-proxy.ahildebrand.workers.dev';
+  const el=document.getElementById('key-result');
+  el.innerHTML='<span class="spinner"></span>';
+  try{
+    // Test: Proxy + Finnhub Quote
+    const fhKey=document.getElementById('fh-key-settings')?.value||localStorage.getItem('finnhub_key')||localStorage.getItem('fh_key')||'';
+    const testUrl = proxy+'/?url='+encodeURIComponent(`https://finnhub.io/api/v1/quote?symbol=AAPL&token=${fhKey}`);
+    const r=await fetch(testUrl, {signal:AbortSignal.timeout(10000)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    const price = d?.c||'?';
+    localStorage.setItem('tradier_key',proxy);
+    el.innerHTML=`<div class="alert ok"><i class="ti ti-check"></i><div>Proxy OK! AAPL via Finnhub: $${typeof price==='number'?price.toFixed(2):price}</div></div>`;
+  } catch(ex){
+    el.innerHTML=`<div class="alert err"><i class="ti ti-x"></i><div>Fehler: ${ex.message}<br><small>Proxy-URL korrekt? Cloudflare Worker aktiv?</small></div></div>`;
+  }
+}
+function testProxy(){
+  const url=document.getElementById('proxy-url').value;
+  const el=document.getElementById('proxy-result');
+  el.innerHTML='<span class="spinner"></span>';
+  (async()=>{
+    try{
+      const r=await fetch(`${url}/health`,{mode:'cors',headers:{'ngrok-skip-browser-warning':'true'},signal:AbortSignal.timeout(20000)});
+      const d=await r.json();
+      const msg=d.status==='ok'?`IBKR-Proxy OK! TWS verbunden (Server ${d.server})`:'Proxy läuft, TWS nicht verbunden';
+      el.innerHTML=`<div class="alert ${d.status==='ok'?'ok':'err'}"><i class="ti ti-check"></i><div>${msg}</div></div>`;
+    } catch(ex){
+      el.innerHTML=`<div class="alert err"><i class="ti ti-alert-circle"></i><div>Nicht erreichbar: ${ex.message}</div></div>`;
+    }
+  })();
+}
+function savePrefs(){
+  localStorage.setItem('pref_delta',document.getElementById('pref-delta').value);
+  localStorage.setItem('pref_days',document.getElementById('pref-days').value);
+  document.getElementById('prefs-ok').classList.remove('hidden');
+  setTimeout(()=>document.getElementById('prefs-ok').classList.add('hidden'),2000);
+}
+
+// ════════════════════════════════════════════
+// PORTFOLIO-ANALYSE
+// ════════════════════════════════════════════
+let portfolioPositions = [];
+
+function addPortfolioPosition(){
+  const ticker   = document.getElementById('pa-ticker').value.trim().toUpperCase();
+  const type     = document.getElementById('pa-type').value;
+  const strike   = +document.getElementById('pa-strike').value;
+  const expiry   = document.getElementById('pa-expiry').value;
+  const premium  = +document.getElementById('pa-premium').value;
+  const optprice = +document.getElementById('pa-optprice').value;
+  const stockprice=+document.getElementById('pa-stockprice').value;
+  const contracts=+document.getElementById('pa-contracts').value||1;
+  if(!ticker||!strike||!expiry){
+    document.getElementById('pa-results').innerHTML='<div class="alert warn"><i class="ti ti-alert-triangle"></i><div>Ticker, Strike und Verfall sind Pflichtfelder.</div></div>';
+    return;
+  }
+  const dte = Math.max(0, Math.round((new Date(expiry)-new Date())/86400000));
+  portfolioPositions.push({ticker,type,strike,expiry,premium,currentOptionPrice:optprice,currentPrice:stockprice,daysToExpiry:dte,contracts});
+  renderPortfolio();
+}
+
+function importCSV(){
+  const csv = document.getElementById('pa-csv').value.trim();
+  if(!csv) return;
+  const lines = csv.split('\n').filter(l=>l.trim());
+  let added = 0;
+  lines.forEach(line => {
+    const [ticker,type,strike,expiry,premium,optprice,stockprice,contracts] = line.split(',').map(s=>s.trim());
+    if(!ticker||!strike||!expiry) return;
+    const dte = Math.max(0, Math.round((new Date(expiry)-new Date())/86400000));
+    portfolioPositions.push({
+      ticker:ticker.toUpperCase(), type:type||'put',
+      strike:+strike, expiry,
+      premium:+premium||0, currentOptionPrice:+optprice||0,
+      currentPrice:+stockprice||0, daysToExpiry:dte, contracts:+contracts||1
+    });
+    added++;
+  });
+  renderPortfolio();
+  document.getElementById('pa-csv').value='';
+}
+
+function clearPortfolio(){
+  portfolioPositions=[];
+  renderPortfolio();
+}
+
+function renderPortfolio(){
+  const results = portfolioPositions.map(p =>
+    window.ScreenerEngine ? window.ScreenerEngine.analyzePosition(p) : analyzePositionLocal(p)
+  );
+
+  // Metrics
+  const totalPnL = results.reduce((s,r)=>s+r.unrealizedPnL,0);
+  const rollCount = results.filter(r=>r.action.includes('ROLLEN')).length;
+  const winCount  = results.filter(r=>r.action.includes('GEWINN')||r.action.includes('VERFALL')).length;
+  document.getElementById('pa-count').textContent = results.length;
+  document.getElementById('pa-pnl').textContent = (totalPnL>=0?'+':'')+'$'+totalPnL.toFixed(0);
+  document.getElementById('pa-pnl').className = 'metric-value '+(totalPnL>=0?'pos':'neg');
+  document.getElementById('pa-roll').textContent = rollCount;
+  document.getElementById('pa-win').textContent = winCount;
+
+  if(!results.length){
+    document.getElementById('pa-results').innerHTML='<div style="color:var(--text2);font-size:13px;text-align:center;padding:2rem 0"><i class="ti ti-briefcase" style="font-size:28px;display:block;margin-bottom:.5rem;opacity:.4"></i>Keine Positionen</div>';
+    return;
+  }
+
+  const colMap={green:'b-green',red:'b-red',amber:'b-amber',blue:'b-blue'};
+  document.getElementById('pa-results').innerHTML = results.map((r,i)=>`
+    <div style="border:.5px solid var(--border);border-radius:var(--r);padding:.75rem;margin-bottom:.5rem;border-left:3px solid ${r.actionColor==='green'?'var(--green)':r.actionColor==='red'?'var(--red)':r.actionColor==='amber'?'var(--amber)':'var(--blue-light)'}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+        <div style="font-weight:600;font-size:13px">${r.ticker} ${r.type.toUpperCase()} $${r.strike} (${r.contracts}×) — ${r.expiry}</div>
+        <span class="badge ${colMap[r.actionColor]||'b-gray'}">${r.action}</span>
+      </div>
+      <div class="g4" style="margin-bottom:.4rem">
+        <div class="metric" style="padding:.4rem .6rem"><div class="metric-label">Aktienkurs</div><div class="metric-value" style="font-size:14px">$${r.currentPrice.toFixed(2)}</div></div>
+        <div class="metric" style="padding:.4rem .6rem"><div class="metric-label">P&L</div><div class="metric-value ${r.unrealizedPnL>=0?'pos':'neg'}" style="font-size:14px">${r.unrealizedPnL>=0?'+':''}$${r.unrealizedPnL.toFixed(0)}</div></div>
+        <div class="metric" style="padding:.4rem .6rem"><div class="metric-label">P&L %</div><div class="metric-value ${r.pnlPct>=0?'pos':'neg'}" style="font-size:14px">${r.pnlPct.toFixed(0)}%</div></div>
+        <div class="metric" style="padding:.4rem .6rem"><div class="metric-label">DTE</div><div class="metric-value ${r.daysToExpiry<=5?'neg':''}" style="font-size:14px">${r.daysToExpiry}d</div></div>
+      </div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:.3rem">${r.reasoning}</div>
+      <div style="font-size:11px;color:var(--text2)">
+        ${r.inTheMoney?'<span class="badge b-red">Im Geld</span>':' <span class="badge b-green">Aus dem Geld</span>'}
+        &nbsp;Innerer Wert: $${r.intrinsic.toFixed(2)}
+        &nbsp;Zeitwert: $${r.timeValue.toFixed(2)}
+        &nbsp;Gewinnschwelle: $${r.bePrice.toFixed(2)}
+      </div>
+      ${r.rollDetails ? `
+      <div style="margin-top:.4rem">
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:.25rem">Roll-Optionen:</div>
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+          ${r.rollDetails.map(rd=>`
+            <div style="flex:1;min-width:140px;padding:.4rem .6rem;background:var(--bg3);border-radius:var(--r);border:.5px solid ${rd.viable?'#C0DD97':'#F7C1C1'}">
+              <div style="font-size:11px;font-weight:600;color:${rd.viable?'var(--green)':'var(--red)'}">Stufe ${rd.level}</div>
+              <div style="font-size:11px;color:var(--text2)">${rd.label}</div>
+              <div style="font-size:12px;font-weight:500;color:${rd.netPrem>=0?'var(--green)':'var(--red)'}">${rd.netPrem>=0?'+':''}$${rd.netPrem}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ''}
+      <button class="btn xs" style="margin-top:.4rem;color:var(--red)" onclick="removePosition(${i})"><i class="ti ti-trash"></i> Entfernen</button>
+    </div>
+  `).join('');
+}
+
+function removePosition(i){
+  portfolioPositions.splice(i,1);
+  renderPortfolio();
+}
+
+// Fallback wenn ScreenerEngine noch nicht geladen
+function analyzePositionLocal(pos){
+  return window.ScreenerEngine ? window.ScreenerEngine.analyzePosition(pos) : {
+    ...pos, intrinsic:0, timeValue:0, closeCost:0,
+    origPremium:(pos.premium||0)*(pos.contracts||1),
+    unrealizedPnL:0, pnlPct:0, bePrice:pos.strike,
+    inTheMoney:false, action:'LADEN...', actionColor:'gray',
+    reasoning:'ScreenerEngine wird geladen...', rollDetails:null
+  };
+}
+window.addEventListener('DOMContentLoaded',()=>{
+    // Restore IBKR settings
+  const ibkrUrl=localStorage.getItem("ibkr_api_url");
+  const ibkrToken=localStorage.getItem("ibkr_token");
+  if(ibkrUrl&&document.getElementById("ibkr-api-url")) document.getElementById("ibkr-api-url").value=ibkrUrl;
+  if(ibkrToken&&document.getElementById("ibkr-token")) document.getElementById("ibkr-token").value=ibkrToken;
+  // Restore saved key
+  const k=localStorage.getItem('tradier_key');
+  if(k) document.getElementById('api-key').value=k;
+  const proxyVal=localStorage.getItem('tradier_key');
+  if(proxyVal&&document.getElementById('api-key')) document.getElementById('api-key').value=proxyVal;
+  // Load journal from localStorage
+  loadJournalFromStorage();
+  const fhk=localStorage.getItem('finnhub_key');
+  if(fhk){
+    document.getElementById('fh-key').value=fhk;
+    document.getElementById('fh-key-settings').value=fhk;
+    document.getElementById('fh-key-status').innerHTML='<span class="badge b-green">✓ Key vorhanden</span>';
+  }
+  const today=new Date().toISOString().slice(0,10);
+  document.getElementById('j-open').value=today;
+  const exp30=new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+  document.getElementById('j-exp').value=exp30;
+  // Init strategy buttons
+  setStrat('csp');
+  updDelta();
+  // Demo chain on first load
+  loadDemoChain('AAPL');
+  renderJournal();
+  calcReturn();
+});
+
+
+// ═══ OPTIONS-DOKTOR ═══
+// ════════════════════════════════════════════════════════
+// OPTIONS-DOKTOR — Positions-Analyse & Roll-Empfehlungen
+// ════════════════════════════════════════════════════════
+
+// Globaler Positions-Store
+window.odPositions = JSON.parse(localStorage.getItem('od_positions') || '[]');
+
+function saveODPositions(){
+  localStorage.setItem('od_positions', JSON.stringify(window.odPositions));
+}
+
+function showAddPositionForm(){
+  document.getElementById('add-position-form').style.display = 'block';
+  document.getElementById('doc-expiry').value = new Date(Date.now()+30*86400000).toISOString().slice(0,10);
+}
+
+// ── IBKR Import ──────────────────────────────────────
+async function ibkrImportAll(){
+  const pu = (document.getElementById('proxy-url')?.value || 'http://localhost:5001').replace(/\/$/,'');
+  const el = document.getElementById('import-status');
+  el.innerHTML = '<div class="alert info"><i class="ti ti-loader ti-spin"></i><div>Importiere Positionen von IBKR/CapTrader...</div></div>';
+  try {
+    const r = await fetch(`${pu}/positions`, {
+      mode: 'cors',
+      headers: {'ngrok-skip-browser-warning':'true'},
+      signal: AbortSignal.timeout(30000)
+    });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d = await r.json();
+
+    // Merge with existing positions (avoid duplicates)
+    const imported = d.positions || [];
+    let added = 0, updated = 0;
+    imported.forEach(p => {
+      const existing = window.odPositions.findIndex(e =>
+        e.ticker === p.ticker && e.strike === p.strike &&
+        e.expiry === p.expiry && e.type === p.type
+      );
+      if(existing >= 0){
+        window.odPositions[existing] = {...window.odPositions[existing], ...p, source:'ibkr'};
+        updated++;
+      } else {
+        window.odPositions.push({...p, source:'ibkr', id: Date.now()+Math.random()});
+        added++;
+      }
+    });
+    saveODPositions();
+    el.innerHTML = `<div class="alert ok"><i class="ti ti-check"></i><div>Import erfolgreich: ${added} neue, ${updated} aktualisierte Positionen. Aktien: ${d.stocks?.length||0}, Cash: ${d.cash||'?'} USD</div></div>`;
+    renderPositionsList();
+  } catch(ex){
+    el.innerHTML = `<div class="alert err"><i class="ti ti-x"></i><div>Import fehlgeschlagen: ${ex.message}<br><small>TWS muss laufen und Proxy aktiv sein (http://localhost:5001)</small></div></div>`;
+  }
+}
+
+// ── Manuelle Position hinzufügen ──────────────────────
+function addManualPosition(){
+  const ticker = document.getElementById('doc-ticker').value.trim().toUpperCase();
+  const type   = document.getElementById('doc-type').value;
+  const strike = parseFloat(document.getElementById('doc-strike').value) || 0;
+  const expiry = document.getElementById('doc-expiry').value;
+  const premium= parseFloat(document.getElementById('doc-premium').value) || 0;
+  const contracts = parseInt(document.getElementById('doc-contracts').value) || 1;
+  const costBasis = parseFloat(document.getElementById('doc-cost-basis').value) || 0;
+  const shares = parseInt(document.getElementById('doc-shares').value) || 0;
+
+  if(!ticker || (!strike && type !== 'STOCK') || !expiry){
+    alert('Bitte Ticker, Strike und Verfallsdatum eingeben.');
+    return;
+  }
+
+  window.odPositions.push({
+    id: Date.now(),
+    ticker, type, strike, expiry, premium, contracts,
+    costBasis, shares,
+    source: 'manual',
+    addedAt: new Date().toISOString()
+  });
+  saveODPositions();
+  document.getElementById('add-position-form').style.display = 'none';
+  renderPositionsList();
+}
+
+// ── Positions-Liste rendern ───────────────────────────
+function renderPositionsList(){
+  const el = document.getElementById('positions-list');
+  if(window.odPositions.length === 0){
+    el.innerHTML = '<div class="alert info"><i class="ti ti-info-circle"></i><div>Keine Positionen. Importiere von IBKR oder füge manuell hinzu.</div></div>';
+    return;
+  }
+
+  // Sort: options by DTE (soonest first), then stocks
+  const sorted = [...window.odPositions].sort((a,b) => {
+    if(a.type === 'STOCK' && b.type !== 'STOCK') return 1;
+    if(a.type !== 'STOCK' && b.type === 'STOCK') return -1;
+    return new Date(a.expiry) - new Date(b.expiry);
+  });
+
+  const now = new Date();
+  let html = `
+  <div style="overflow-x:auto">
+  <table style="width:100%;font-size:13px;border-collapse:collapse">
+  <thead>
+    <tr style="border-bottom:1.5px solid var(--border2);color:var(--text2)">
+      <th style="padding:8px;text-align:left">Ticker</th>
+      <th style="padding:8px;text-align:left">Typ</th>
+      <th style="padding:8px;text-align:right">Strike</th>
+      <th style="padding:8px;text-align:left">Verfall</th>
+      <th style="padding:8px;text-align:right">DTE</th>
+      <th style="padding:8px;text-align:right">Prämie</th>
+      <th style="padding:8px;text-align:right">Kontr.</th>
+      <th style="padding:8px;text-align:center">Quelle</th>
+      <th style="padding:8px;text-align:center">Aktion</th>
+    </tr>
+  </thead>
+  <tbody>`;
+
+  sorted.forEach((p, i) => {
+    const dte = p.expiry ? Math.max(0, Math.round((new Date(p.expiry)-now)/86400000)) : '—';
+    const dteColor = dte <= 7 ? 'var(--red)' : dte <= 21 ? 'var(--amber)' : 'var(--green)';
+    const typeLabel = {CSP:'📉 CSP', CC:'📈 CC', STRANGLE:'🔀 Strangle', IRON_CONDOR:'🦅 Iron Condor', STOCK:'🏦 Aktie'}[p.type] || p.type;
+    const srcBadge = p.source === 'ibkr'
+      ? '<span style="background:#1a3a5c;color:#6bb3f0;padding:2px 6px;border-radius:4px;font-size:10px">IBKR</span>'
+      : '<span style="background:var(--bg3);color:var(--text2);padding:2px 6px;border-radius:4px;font-size:10px">Manuell</span>';
+
+    html += `
+    <tr style="border-bottom:0.5px solid var(--border);cursor:pointer" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
+      <td style="padding:8px;font-weight:600">${p.ticker}</td>
+      <td style="padding:8px">${typeLabel}</td>
+      <td style="padding:8px;text-align:right">${p.type !== 'STOCK' ? '$'+p.strike : (p.shares||0)+' Aktien'}</td>
+      <td style="padding:8px">${p.expiry || '—'}</td>
+      <td style="padding:8px;text-align:right;color:${dteColor};font-weight:600">${dte}d</td>
+      <td style="padding:8px;text-align:right">${p.premium ? '$'+p.premium.toFixed(2) : '—'}</td>
+      <td style="padding:8px;text-align:right">${p.contracts || (p.shares ? p.shares+' Aktien' : '—')}</td>
+      <td style="padding:8px;text-align:center">${srcBadge}</td>
+      <td style="padding:8px;text-align:center">
+        <button class="btn xs primary" onclick="analyzePosition(${i})">⚕️ Analyse</button>
+        <button class="btn xs" onclick="removePosition(${i})" style="margin-left:4px">🗑</button>
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table></div>';
+
+  // Summary stats
+  const optCount = window.odPositions.filter(p => p.type !== 'STOCK').length;
+  const stockCount = window.odPositions.filter(p => p.type === 'STOCK').length;
+  const urgentCount = sorted.filter(p => {
+    const dte = p.expiry ? Math.max(0, Math.round((new Date(p.expiry)-now)/86400000)) : 999;
+    return dte <= 7 && p.type !== 'STOCK';
+  }).length;
+
+  html = `<div style="display:flex;gap:1rem;margin-bottom:.75rem;flex-wrap:wrap">
+    <div class="card card-sm" style="padding:.5rem 1rem;flex:1;min-width:120px">
+      <div style="font-size:11px;color:var(--text2)">Optionen</div>
+      <div style="font-size:1.4rem;font-weight:700">${optCount}</div>
+    </div>
+    <div class="card card-sm" style="padding:.5rem 1rem;flex:1;min-width:120px">
+      <div style="font-size:11px;color:var(--text2)">Aktien</div>
+      <div style="font-size:1.4rem;font-weight:700">${stockCount}</div>
+    </div>
+    <div class="card card-sm" style="padding:.5rem 1rem;flex:1;min-width:120px;border:1px solid ${urgentCount>0?'var(--red)':'var(--border)'}">
+      <div style="font-size:11px;color:var(--text2)">Dringend (≤7 DTE)</div>
+      <div style="font-size:1.4rem;font-weight:700;color:${urgentCount>0?'var(--red)':'inherit'}">${urgentCount}</div>
+    </div>
+  </div>` + html;
+
+  el.innerHTML = html;
+}
+
+function removePosition(idx){
+  if(!confirm('Position entfernen?')) return;
+  const sorted = [...window.odPositions].sort((a,b) => {
+    const now = new Date();
+    if(a.type === 'STOCK' && b.type !== 'STOCK') return 1;
+    if(a.type !== 'STOCK' && b.type === 'STOCK') return -1;
+    return new Date(a.expiry) - new Date(b.expiry);
+  });
+  const id = sorted[idx].id;
+  window.odPositions = window.odPositions.filter(p => p.id !== id);
+  saveODPositions();
+  renderPositionsList();
+}
+
+// ── Alle Positionen analysieren ───────────────────────
+async function analyzeAllPositions(){
+  const pu = (document.getElementById('proxy-url')?.value || 'http://localhost:5001').replace(/\/$/,'');
+  // Fetch current prices for all tickers
+  const tickers = [...new Set(window.odPositions.map(p => p.ticker))];
+  const prices = {};
+  for(const ticker of tickers){
+    try{
+      const r = await fetch(`${pu}/quote/${ticker}`, {mode:'cors', headers:{'ngrok-skip-browser-warning':'true'}, signal:AbortSignal.timeout(10000)});
+      const d = await r.json();
+      if(d.price > 0) prices[ticker] = d.price;
+    } catch(e){ /* use stored price */ }
+  }
+  // Analyze each position and re-render with status
+  window.odCurrentPrices = prices;
+  renderPositionsWithDiagnosis(prices);
+}
+
+function renderPositionsWithDiagnosis(prices){
+  const el = document.getElementById('positions-list');
+  const now = new Date();
+
+  const sorted = [...window.odPositions].sort((a,b) => {
+    if(a.type === 'STOCK' && b.type !== 'STOCK') return 1;
+    if(a.type !== 'STOCK' && b.type === 'STOCK') return -1;
+    return new Date(a.expiry) - new Date(b.expiry);
+  });
+
+  let html = '<div style="display:flex;flex-direction:column;gap:.75rem">';
+
+  sorted.forEach((p, i) => {
+    const currentPrice = prices[p.ticker] || p.lastPrice || 0;
+    const dte = p.expiry ? Math.max(0, Math.round((new Date(p.expiry)-now)/86400000)) : 999;
+    const diag = diagnosePosition(p, currentPrice, dte);
+
+    const statusColor = {OK:'var(--green)', WATCH:'var(--amber)', ROLLEN:'var(--red)', DRINGEND:'#c0392b'}[diag.status] || 'var(--text2)';
+    const statusBg = {OK:'var(--green-bg)', WATCH:'var(--amber-bg)', ROLLEN:'var(--red-bg)', DRINGEND:'var(--red-bg)'}[diag.status] || 'var(--bg3)';
+
+    html += `
+    <div class="card card-sm" style="border-left:3px solid ${statusColor}">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+        <div>
+          <span style="font-weight:700;font-size:1rem">${p.ticker}</span>
+          <span style="margin-left:.5rem;color:var(--text2);font-size:13px">${p.type} ${p.type!=='STOCK'?'$'+p.strike+' · '+p.expiry+' ('+dte+'d)':p.shares+' Aktien'}</span>
+          ${currentPrice > 0 ? `<span style="margin-left:.5rem;color:var(--text2);font-size:12px">Kurs: $${currentPrice.toFixed(2)}</span>` : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:.5rem">
+          <span style="background:${statusBg};color:${statusColor};padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">${diag.status}</span>
+          <button class="btn xs primary" onclick="analyzePosition(${i}, ${currentPrice})">⚕️ Details</button>
+        </div>
+      </div>
+      <div style="margin-top:.5rem;font-size:12px;color:var(--text2)">${diag.shortNote}</div>
+    </div>`;
+  });
+
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// ── Einzel-Diagnose ───────────────────────────────────
+function diagnosePosition(p, currentPrice, dte){
+  if(p.type === 'STOCK'){
+    return {status:'OK', shortNote:`${p.shares} Aktien · Einstand: $${p.costBasis||'?'} · Aktuell: $${currentPrice.toFixed(2)}`};
+  }
+
+  const strike = p.strike || 0;
+  const premium = p.premium || 0;
+  const maxProfit = premium * (p.contracts||1) * 100;
+  let status, shortNote;
+
+  if(p.type === 'CSP'){
+    const itm = currentPrice < strike;
+    const itmPct = itm ? ((strike - currentPrice)/strike*100) : 0;
+    const profitPct = currentPrice > 0 ? Math.min(100, (premium / Math.max(0.01, Math.abs(currentPrice - strike + premium))) * 100) : 0;
+
+    if(itmPct > 15) status = 'DRINGEND';
+    else if(itm && itmPct > 5) status = 'ROLLEN';
+    else if(itm || dte <= 7) status = 'WATCH';
+    else if(dte <= 21) status = 'WATCH';
+    else status = 'OK';
+
+    shortNote = itm
+      ? `⚠️ ITM ${itmPct.toFixed(1)}% · Kurs $${currentPrice.toFixed(2)} unter Strike $${strike} · ${dte}d verbleibend`
+      : `✓ OTM · Kurs $${currentPrice.toFixed(2)} · ${dte}d · Max Gewinn: $${maxProfit.toFixed(0)}`;
+
+  } else if(p.type === 'CC'){
+    const itm = currentPrice > strike;
+    const itmPct = itm ? ((currentPrice - strike)/strike*100) : 0;
+    const gainPerShare = p.costBasis > 0 ? currentPrice - p.costBasis : 0;
+    const taxNote = gainPerShare > 0 && p.costBasis > 0 ? ` · ⚠️ Steuer: ${(gainPerShare*(p.shares||100)).toFixed(0)} USD Gewinn bei Ausübung` : '';
+
+    if(itmPct > 10) status = 'ROLLEN';
+    else if(itm) status = 'WATCH';
+    else if(dte <= 7) status = 'WATCH';
+    else status = 'OK';
+
+    shortNote = itm
+      ? `⚠️ ITM ${itmPct.toFixed(1)}% · Kurs $${currentPrice.toFixed(2)} über Strike $${strike}${taxNote}`
+      : `✓ OTM · Kurs $${currentPrice.toFixed(2)} · ${dte}d${taxNote}`;
+  } else {
+    status = dte <= 14 ? 'WATCH' : 'OK';
+    shortNote = `${p.type} · ${dte}d verbleibend`;
+  }
+
+  return {status, shortNote};
+}
+
+// ── Detaillierte Einzel-Analyse ───────────────────────
+async function analyzePosition(idx, currentPrice){
+  const sorted = [...window.odPositions].sort((a,b) => {
+    const now = new Date();
+    if(a.type === 'STOCK' && b.type !== 'STOCK') return 1;
+    if(a.type !== 'STOCK' && b.type === 'STOCK') return -1;
+    return new Date(a.expiry) - new Date(b.expiry);
+  });
+  const p = sorted[idx];
+  const pu = (document.getElementById('proxy-url')?.value || 'http://localhost:5001').replace(/\/$/,'');
+  const panel = document.getElementById('diagnosis-panel');
+  panel.style.display = 'block';
+  panel.innerHTML = '<div class="card"><div class="alert info"><i class="ti ti-loader ti-spin"></i><div>Analysiere ' + p.ticker + '...</div></div></div>';
+  panel.scrollIntoView({behavior:'smooth'});
+
+  // Get current price if not provided
+  let price = currentPrice || 0;
+  if(!price || price <= 0){
+    try{
+      const r = await fetch(`${pu}/quote/${p.ticker}`, {mode:'cors', headers:{'ngrok-skip-browser-warning':'true'}, signal:AbortSignal.timeout(10000)});
+      const d = await r.json();
+      price = d.price || 0;
+    } catch(e){}
+  }
+
+  const now = new Date();
+  const dte = p.expiry ? Math.max(0, Math.round((new Date(p.expiry)-now)/86400000)) : 0;
+  const diag = diagnosePosition(p, price, dte);
+
+  // Ludwig Roll-Empfehlung
+  const ludwigRec = getLudwigRecommendation(p, price, dte);
+  // Tax analysis for CC
+  const taxAnalysis = getTaxAnalysis(p, price);
+  // AI Analysis
+  const aiAnalysis = await getAIAnalysis(p, price, dte, diag, ludwigRec);
+
+  const statusColor = {OK:'var(--green)', WATCH:'var(--amber)', ROLLEN:'var(--red)', DRINGEND:'#c0392b'}[diag.status] || 'var(--text2)';
+
+  panel.innerHTML = `
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <h3 style="margin:0">⚕️ Diagnose: ${p.ticker} ${p.type} ${p.type!=='STOCK'?'$'+p.strike:''}
+        <span style="color:${statusColor};margin-left:.5rem">${diag.status}</span>
+      </h3>
+      <button class="btn xs" onclick="document.getElementById('diagnosis-panel').style.display='none'">✕</button>
+    </div>
+
+    <!-- Position Details -->
+    <div class="g2" style="margin-bottom:1rem">
+      <div style="background:var(--bg3);border-radius:var(--r);padding:.75rem">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:.5rem">POSITION</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.25rem;font-size:13px">
+          <span style="color:var(--text2)">Typ:</span><span>${p.type}</span>
+          <span style="color:var(--text2)">Strike:</span><span>$${p.strike||'—'}</span>
+          <span style="color:var(--text2)">Verfall:</span><span>${p.expiry||'—'} (${dte}d)</span>
+          <span style="color:var(--text2)">Prämie:</span><span>$${p.premium||'—'}</span>
+          <span style="color:var(--text2)">Kontrakte:</span><span>${p.contracts||1}</span>
+          <span style="color:var(--text2)">Akt. Kurs:</span><span style="font-weight:600">$${price>0?price.toFixed(2):'—'}</span>
+        </div>
+      </div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:.75rem">
+        <div style="font-size:11px;color:var(--text2);margin-bottom:.5rem">LAGE</div>
+        <div style="font-size:13px">${diag.shortNote}</div>
+      </div>
+    </div>
+
+    <!-- Ludwig Empfehlung -->
+    <div style="margin-bottom:1rem">
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:.4rem">📚 LUDWIG-SYSTEMATIK</div>
+      <div style="background:var(--bg3);border-radius:var(--r);padding:.75rem;font-size:13px">
+        ${ludwigRec}
+      </div>
+    </div>
+
+    ${taxAnalysis ? `
+    <!-- Steuerhinweis -->
+    <div style="margin-bottom:1rem">
+      <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:.4rem">⚠️ STEUERHINWEIS (CC-AUSÜBUNG)</div>
+      <div style="background:var(--amber-bg);border:1px solid var(--amber);border-radius:var(--r);padding:.75rem;font-size:13px">
+        ${taxAnalysis}
+      </div>
+    </div>` : ''}
+
+    <!-- AI Analyse -->
+    <div>
+      <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:.4rem">🤖 KI-ANALYSE (Claude)</div>
+      <div id="ai-analysis-content" style="background:var(--bg3);border-radius:var(--r);padding:.75rem;font-size:13px">
+        ${aiAnalysis}
+      </div>
+    </div>
+
+    <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn primary" onclick="addToJournalFromDiag(${JSON.stringify(p).replace(/"/g,'&quot;')})"><i class="ti ti-notebook"></i>Ins Journal</button>
+      <button class="btn" onclick="openChainForPosition('${p.ticker}')"><i class="ti ti-table"></i>Optionskette öffnen</button>
+    </div>
+  </div>`;
+}
+
+// ── Ludwig Empfehlung ─────────────────────────────────
+function getLudwigRecommendation(p, price, dte){
+  if(p.type === 'STOCK'){
+    const gain = p.costBasis > 0 ? ((price - p.costBasis)/p.costBasis*100).toFixed(1) : '?';
+    return `Aktienposition · Gewinn: ${gain}% · Keine Roll-Aktion nötig.`;
+  }
+
+  const strike = p.strike || 0;
+  const premium = p.premium || 0;
+  const contracts = p.contracts || 1;
+
+  if(p.type === 'CSP'){
+    const itm = price < strike && price > 0;
+    const itmPct = itm ? ((strike - price)/strike*100) : 0;
+
+    if(!itm && dte > 21){
+      return `✅ <strong>Halten</strong> — Position ist OTM (Kurs $${price.toFixed(2)} > Strike $${strike}), ${dte} DTE. Kein Handlungsbedarf nach Ludwig Kap. 3.`;
+    }
+    if(!itm && dte <= 21 && dte > 7){
+      return `🔄 <strong>Rollen prüfen (Ludwig Stufe 1)</strong> — 21 DTE erreicht.<br>
+        → Strike leicht senken (ca. $${(strike * 0.97).toFixed(1)}), Laufzeit auf 30–45 DTE verlängern.<br>
+        → Nettoprämie: mindestens $${(premium * 0.3).toFixed(2)} anstreben.`;
+    }
+    if(!itm && dte <= 7){
+      return `⚡ <strong>Rollen jetzt (Ludwig Stufe 1)</strong> — Weniger als 7 DTE.<br>
+        → Gleichen oder leicht tieferen Strike, 30 DTE Ziel.<br>
+        → Prämie: $${(premium * 0.5).toFixed(2)}–$${(premium * 0.8).toFixed(2)} realistisch.`;
+    }
+    if(itm && itmPct < 5){
+      return `🟡 <strong>Rollen (Ludwig Stufe 2)</strong> — Leicht ITM (${itmPct.toFixed(1)}%).<br>
+        → Option gleichen Strike, 45 DTE verlängern für Zeitwert-Rückgewinnung.<br>
+        → Nettoprämie ≥ $${(premium * 0.2).toFixed(2)} anstreben.`;
+    }
+    if(itm && itmPct >= 5 && itmPct < 15){
+      return `🔴 <strong>Rollen Stufe 2–3</strong> — ${itmPct.toFixed(1)}% ITM.<br>
+        → Stufe 2: Gleicher Strike, 60 DTE — Prämie ca. $${(premium * 0.4).toFixed(2)}<br>
+        → Stufe 3: 2× Kontrakte, Strike $${(strike * 0.92).toFixed(1)}, 45 DTE — nur wenn Aktie fundamental OK.<br>
+        → Alternativ: Zuteilung akzeptieren und Covered Calls schreiben.`;
+    }
+    return `🚨 <strong>DRINGEND — ${itmPct.toFixed(1)}% ITM</strong><br>
+      → Sofort schließen oder Stufe-3-Roll: 2× Kontrakte, Strike $${(strike * 0.88).toFixed(1)}, 60 DTE.<br>
+      → Zuteilung einkalkulieren: Kapitalbedarf $${(strike * 100 * contracts).toFixed(0)}.`;
+  }
+
+  if(p.type === 'CC'){
+    const itm = price > strike && price > 0;
+    const itmPct = itm ? ((price - strike)/strike*100) : 0;
+
+    if(!itm){
+      return `✅ <strong>Halten</strong> — OTM (Kurs $${price.toFixed(2)} < Strike $${strike}). Zeitwertverlust läuft. ${dte} DTE.`;
+    }
+    if(itmPct < 5){
+      return `🟡 <strong>Rollen erwägen</strong> — ${itmPct.toFixed(1)}% ITM.<br>
+        → Strike anheben auf $${(strike * 1.05).toFixed(1)}, Laufzeit 30–45 DTE.<br>
+        → Steuerfolgen bei Ausübung beachten (siehe Steuerhinweis).`;
+    }
+    return `🔴 <strong>Rollen (Defensiv)</strong> — ${itmPct.toFixed(1)}% ITM.<br>
+      → Strike $${(price * 1.03).toFixed(1)} (3% über Kurs), 45 DTE.<br>
+      → Vor Ausübung unbedingt Steuerfolgen prüfen!`;
+  }
+
+  return `Kein spezifischer Ludwig-Hinweis für ${p.type}. Manuelle Prüfung empfohlen.`;
+}
+
+// ── Steueranalyse CC ──────────────────────────────────
+function getTaxAnalysis(p, price){
+  if(p.type !== 'CC' || !p.costBasis || !p.shares) return null;
+
+  const costBasis = parseFloat(p.costBasis);
+  const shares = parseInt(p.shares);
+  const strike = p.strike || 0;
+  const premium = p.premium || 0;
+  const currentGain = (price - costBasis) * shares;
+  const assignmentGain = (strike + premium - costBasis) * shares;
+  const abgeltungsteuer = assignmentGain * 0.25; // 25% Abgeltungsteuer + Soli
+  const soli = abgeltungsteuer * 0.055;
+  const totalTax = abgeltungsteuer + soli;
+
+  return `
+  <strong>Einstandskurs:</strong> $${costBasis.toFixed(2)} · <strong>Aktuelle Kurs:</strong> $${price.toFixed(2)}<br>
+  <strong>Aktueller Buchgewinn:</strong> $${currentGain.toFixed(0)} (${((price-costBasis)/costBasis*100).toFixed(1)}%)<br>
+  <strong>Gewinn bei Ausübung zu Strike $${strike}:</strong> $${assignmentGain.toFixed(0)}<br>
+  <strong>Steuerbelastung (ca.):</strong> ~$${totalTax.toFixed(0)} (25% KESt + 5.5% Soli)<br>
+  <strong>Netto nach Steuer:</strong> $${(assignmentGain - totalTax).toFixed(0)}<br>
+  <em style="color:var(--amber)">→ Vor Ausübung prüfen: Ist Rollen steuerlich günstiger?</em>`;
+}
+
+// ── AI-Analyse via Claude ─────────────────────────────
+async function getAIAnalysis(p, price, dte, diag, ludwigRec){
+  try{
     const prompt = `Du bist ein erfahrener Options-Trader. Analysiere diese Position knapp auf Deutsch (max 120 Wörter):
 
 Ticker: ${p.ticker} | Typ: ${p.type} | Strike: $${p.strike} | DTE: ${dte} | Prämie: $${p.premium}
