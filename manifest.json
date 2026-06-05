@@ -1,9 +1,8 @@
-
 {
   "name": "PremiumOptions",
   "short_name": "PremiumOptions",
-  "description": "Ludwig-Optionsstrategie App — CSP, Covered Call, Wheel",
-  "start_url": "/premium-options/",
+  "description": "Ludwig-Optionsstrategie App — CSP, Covered Call, Wheel, Options-Doktor",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#F5F5F2",
   "theme_color": "#1D9E75",
