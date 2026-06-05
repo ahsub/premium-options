@@ -71,8 +71,9 @@ def get_third_fridays(n=12):
             year += 1
     return results[:n]
  
-@app.route("/health")
+@app.route("/health", methods=["GET","OPTIONS"])
 def health():
+    if request.method=="OPTIONS": return "",200
     if not IBKR_AVAILABLE:
         return jsonify({"status": "error", "ibkr": "ib_insync nicht installiert"})
     try:
@@ -83,8 +84,9 @@ def health():
     except Exception as e:
         return jsonify({"status": "disconnected", "ibkr": str(e), "version": "1.2.0"})
  
-@app.route("/quote/<symbol>")
+@app.route("/quote/<symbol>", methods=["GET","OPTIONS"])
 def get_quote(symbol):
+    if request.method=="OPTIONS": return "",200
     symbol = symbol.upper()
     try:
         async def _quote(ib):
@@ -107,8 +109,9 @@ def get_quote(symbol):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
  
-@app.route("/expirations/<symbol>")
+@app.route("/expirations/<symbol>", methods=["GET","OPTIONS"])
 def get_expirations(symbol):
+    if request.method=="OPTIONS": return "",200
     symbol = symbol.upper()
     try:
         async def _exps(ib):
@@ -133,8 +136,9 @@ def get_expirations(symbol):
             "note": str(e)
         })
  
-@app.route("/chain/<symbol>/<expiration>")
+@app.route("/chain/<symbol>/<expiration>", methods=["GET","OPTIONS"])
 def get_chain(symbol, expiration):
+    if request.method=="OPTIONS": return "",200
     symbol = symbol.upper()
     opt_type = request.args.get("type", "put")
     try:
@@ -228,6 +232,51 @@ def create_ssl_cert():
         return cert, key
     except:
         return None, None
+ 
+@app.route("/positions", methods=["GET","OPTIONS"])
+def get_positions():
+    if request.method=="OPTIONS": return "",200
+    try:
+        async def _f(ib):
+            await __import__('asyncio').sleep(2)
+            portfolio=ib.portfolio()
+            positions=[]; stocks=[]; cash=0
+            for item in portfolio:
+                c=item.contract; pos=item.position
+                avg=item.averageCost; mv=item.marketValue; pnl=item.unrealizedPNL
+                if c.secType=="OPT":
+                    exp=c.lastTradeDateOrContractMonth
+                    exp_fmt=f"{exp[:4]}-{exp[4:6]}-{exp[6:]}" if len(exp)==8 else exp
+                    positions.append({"ticker":c.symbol,"type":"CSP" if c.right=="P" else "CC","strike":float(c.strike),"expiry":exp_fmt,"contracts":int(abs(pos)),"premium":round(abs(float(avg))/100,2),"marketValue":round(float(mv),2),"unrealizedPnL":round(float(pnl),2),"source":"ibkr"})
+                elif c.secType=="STK":
+                    stocks.append({"ticker":c.symbol,"type":"STOCK","shares":int(pos),"costBasis":round(float(avg),2),"marketValue":round(float(mv),2),"unrealizedPnL":round(float(pnl),2),"source":"ibkr"})
+                elif c.secType=="CASH":
+                    cash+=float(mv)
+            return {"positions":positions+stocks,"stocks":stocks,"options":positions,"cash":round(cash,2),"count":len(positions)+len(stocks)}
+        return jsonify(ib_call(_f))
+    except Exception as e:
+        return jsonify({"error":str(e)}),500
+ 
+@app.route("/ai", methods=["POST","OPTIONS"])
+def ai_analyze():
+    if request.method=="OPTIONS": return "",200
+    try:
+        import urllib.request, json as _json
+        body=request.get_json()
+        prompt=body.get("prompt","")
+        req=urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=_json.dumps({"model":"claude-haiku-4-5-20251001","max_tokens":250,"messages":[{"role":"user","content":prompt}]}).encode(),
+            headers={"Content-Type":"application/json","anthropic-version":"2023-06-01","x-api-key":body.get("apiKey","")},
+            method="POST"
+        )
+        with urllib.request.urlopen(req,timeout=15) as resp:
+            data=_json.loads(resp.read())
+        text=data.get("content",[{}])[0].get("text","Keine Antwort")
+        return jsonify({"text":text})
+    except Exception as e:
+        return jsonify({"error":str(e),"text":f"KI-Analyse Fehler: {e}"}),200
+ 
  
 if __name__ == "__main__":
     print("="*55)
