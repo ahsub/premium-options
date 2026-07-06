@@ -1,6 +1,6 @@
 # Premium Options — Strategiedokument
 
-**Version:** 1.0
+**Version:** 1.1
 **Stand:** 03.07.2026
 **Ablage:** `ahsub/premium-options/docs/STRATEGIE.md`
 **Fortschreibung:** Claude versioniert dieses Dokument bei jeder strategischen Weichenstellung — Governance analog `ko-aggregator/docs/STRATEGIE.md` (UIQ) und `refundex/docs/STRATEGIE.md`.
@@ -129,3 +129,4 @@ Premium Options berührt als einziges Suite-Modul **beide** regulatorischen Schr
 | Version | Datum | Änderung |
 |---|---|---|
 | 1.0 | 03.07.2026 | Erstfassung: Leitbild (steuerbewusster Options-Doktor als USP), Suite-Positionierung als drittes Modul, SWOT inkl. Ludwig-/BaFin-/Steuer-Befunde aus Code-Review, Doppel-Schranken-Compliance (WpHG + StBerG), Entscheidungsfilter |
+| 1.1 | 08.07.2026 | **Konzept-Vorschlag Options-Radar / Options-Doktor als Kern-Feature der PO-Entparkung** (siehe SUITE.md §7 Punkt 7): Flex-Query nicht nur rückwärts (Steuer-Post-Mortem) sondern **vorwärts als Live-Risiko-Kanal** für offene Positionen. Deterministische Trigger (Delta-Drift, DTE-Bänder, IV-Rank-Sprünge, Kursabstand-zu-Strike relativ Restlaufzeit, Earnings-/Ex-Div-Fenster, Regime-Wechsel aus UIQ). LLM-Rolle: Handlungsoptionen mit Kosten-Nutzen aus Options-Chain formulieren, keine Zahlen erfinden. Frequenz nightly + verdichtet nahe kritischer Strikes. Suite-Kohärenz: Refundex-Infrastruktur (`ko-flex.js`) wird geteilt, UIQ-Regime wird Trigger-Quelle, PO-Assignment wird Refundex-Steuerposition. **Verortung: PO-Entparkung, kein v1.x-Retrofit, kein sofortiger Bau.** Prüfung wenn PO wieder aktiv wird (UIQ Phase 1+ läuft). Wirbelsäulen-Review-Kandidat: Radar-Ansatz könnte PO-Priorität in der Wirbelsäule anheben, sobald UIQ Phase 1 stabil läuft — Entscheidung dann, nicht jetzt. |
